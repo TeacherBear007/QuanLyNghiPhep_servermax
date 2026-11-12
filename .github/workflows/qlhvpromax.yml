@@ -1,3 +1,65 @@
+name: CI/CD QLHV Pro Max
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ci:
+    name: Build và kiểm thử
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      QLHV_IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout đúng commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Cài .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cài Node.js cho kiểm thử
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Restore và build Release
+        run: |
+          dotnet restore QuanLyNghiPhep.sln
+          dotnet build QuanLyNghiPhep.sln -c Release --no-restore
+
+      - name: Kiểm thử nghiệp vụ, HTTP và JavaScript
+        run: |
+          dotnet run --project Tests/QuanLyNghiPhep.Tests.csproj -c Release --no-build
+          node Tests/http_smoke.mjs
+          node Tests/login_ui.mjs
+
+      - name: Build image và kiểm tra Nginx, HTTPS, WebSocket
+        run: bash deploy/ci-smoke.sh
+
+      - name: Đóng gói image đã kiểm thử
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: docker image save "qlhvpromax:$QLHV_IMAGE_TAG" | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
+
+      - name: Lưu image để deploy
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qlhvpromax-image
           path: ${{ runner.temp }}/image.tar.gz
           if-no-files-found: error
           compression-level: 0
@@ -17,7 +79,10 @@
       cancel-in-progress: false
     env:
       DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-      CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL || secrets.CERTBOT_EMAIL }}
+      CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
+      # Đường dẫn file mẫu Nginx trong repo (tính từ thư mục gốc). Đổi ở đây nếu file nằm chỗ khác,
+      # ví dụ: deploy/nginx/qlhvpromax.conf
+      NGINX_TEMPLATE: qlhvpromax
     steps:
       - name: Checkout Docker Compose và mẫu Nginx
         uses: actions/checkout@v6
@@ -32,108 +97,152 @@
 
       - name: Thiết lập SSH và xác thực máy chủ
         env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST || vars.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER || vars.SERVER_USER }}
+          # SECRETS: Settings -> Secrets and variables -> Actions -> tab "Secrets"
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SERVER_PORT: ${{ vars.SERVER_PORT || secrets.SERVER_PORT || '22' }}
+          # Tùy chọn: dòng known_hosts của server (tạo bằng: ssh-keyscan -t ed25519 <host>)
+          SERVER_HOST_KEY: ${{ secrets.SERVER_HOST_KEY }}
+          # VARIABLES: Settings -> Secrets and variables -> Actions -> tab "Variables"
+          SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
         run: |
-          # Chỉ làm sạch các trường cấu hình một dòng; không sửa nội dung khóa riêng.
           config_error=0
-          for name in SERVER_HOST SERVER_USER SERVER_PORT DEPLOY_DOMAIN CERTBOT_EMAIL; do
-            value=$(printf '%s' "${!name}" | tr -d '[:space:]')
-            printf -v "$name" '%s' "$value"
-            if [[ -z "$value" ]]; then
-              echo "::error::$name: KHÔNG NHẬN ĐƯỢC GIÁ TRỊ. Kiểm tra đúng tên và nguồn Secrets/Variables."
-              config_error=1
-            else
-              echo "$name: ĐÃ NHẬN GIÁ TRỊ."
-            fi
-          done
-          if (( config_error != 0 )); then exit 1; fi
 
-          if [[ ! ${SERVER_HOST:-} =~ ^[a-zA-Z0-9.:_-]+$ ]]; then
-            echo "::error::SERVER_HOST đã có giá trị nhưng sai định dạng. Chỉ nhập IP hoặc hostname SSH, không kèm https://, user@ hay cổng."
+          # Bỏ khoảng trắng, dấu xuống dòng thừa do copy/paste
+          SERVER_HOST=$(printf '%s' "${SERVER_HOST:-}" | tr -d '[:space:]')
+          SERVER_USER=$(printf '%s' "${SERVER_USER:-}" | tr -d '[:space:]')
+          SERVER_PORT=$(printf '%s' "${SERVER_PORT:-22}" | tr -d '[:space:]')
+
+          # Chỉ in độ dài (không lộ giá trị). Độ dài 0 = giá trị đang trống / nằm sai chỗ / sai tên.
+          echo "Độ dài: SERVER_HOST=${#SERVER_HOST} SERVER_USER=${#SERVER_USER} SERVER_SSH_KEY=${#SERVER_SSH_KEY} SERVER_PORT=${#SERVER_PORT} DEPLOY_DOMAIN=${#DEPLOY_DOMAIN} CERTBOT_EMAIL=${#CERTBOT_EMAIL}"
+
+          # --- SERVER_HOST (Secret) ---
+          if [[ -z $SERVER_HOST ]]; then
+            echo "::error::SERVER_HOST đang trống. Tạo trong tab Secrets (environment production hoặc repository), KHÔNG phải tab Variables."
+            config_error=1
+          elif [[ ! $SERVER_HOST =~ ^[a-zA-Z0-9.:_-]+$ ]]; then
+            echo "::error::SERVER_HOST sai định dạng. Chỉ nhập IP hoặc hostname, không kèm user@, ssh:// hay https://."
             config_error=1
           fi
-          if [[ ! ${SERVER_USER:-} =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
-            echo "::error::SERVER_USER đã có giá trị nhưng sai định dạng. Chỉ nhập tên tài khoản SSH, ví dụ root hoặc ubuntu."
+
+          # --- SERVER_USER (Secret) ---
+          if [[ -z $SERVER_USER ]]; then
+            echo "::error::SERVER_USER đang trống. Tạo trong tab Secrets (environment production hoặc repository), KHÔNG phải tab Variables."
+            config_error=1
+          elif [[ ! $SERVER_USER =~ ^[a-zA-Z_][a-zA-Z0-9_.-]*$ ]]; then
+            echo "::error::SERVER_USER sai định dạng. Chỉ nhập tên tài khoản SSH, ví dụ: ubuntu hoặc root."
             config_error=1
           fi
+
+          # --- SERVER_SSH_KEY (Secret) ---
           if [[ -z ${SERVER_SSH_KEY:-} ]]; then
-            echo "::error::SERVER_SSH_KEY chưa được truyền vào job. Kiểm tra Repository secrets hoặc secrets của environment production."
+            echo "::error::SERVER_SSH_KEY đang trống. Kiểm tra tab Secrets của environment production."
             config_error=1
           fi
-          if [[ ! ${SERVER_PORT:-} =~ ^[1-9][0-9]{0,4}$ ]] || (( SERVER_PORT > 65535 )); then
-            echo "::error::SERVER_PORT phải từ 1 đến 65535."
+
+          # --- SERVER_PORT (Variable, mặc định 22) ---
+          if [[ ! $SERVER_PORT =~ ^[1-9][0-9]{0,4}$ ]] || (( SERVER_PORT > 65535 )); then
+            echo "::error::SERVER_PORT phải là số từ 1 đến 65535."
             config_error=1
           fi
-          if [[ ${#DEPLOY_DOMAIN} -gt 253 || ! $DEPLOY_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
-            echo "::error::DEPLOY_DOMAIN đã có giá trị nhưng sai định dạng. Nhập tên miền viết thường, không kèm https://."
+
+          # --- DEPLOY_DOMAIN (Variable) ---
+          if [[ -z ${DEPLOY_DOMAIN:-} ]]; then
+            echo "::error::DEPLOY_DOMAIN đang trống. Tạo trong tab Variables (không phải Secrets)."
+            config_error=1
+          elif [[ ${#DEPLOY_DOMAIN} -gt 253 || ! $DEPLOY_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+            echo "::error::DEPLOY_DOMAIN sai định dạng. Nhập tên miền viết thường, không kèm https:// hay dấu / và không có khoảng trắng."
             config_error=1
           fi
-          if [[ ! $CERTBOT_EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "::error::CERTBOT_EMAIL đã có giá trị nhưng sai định dạng. Chỉ nhập địa chỉ email, không kèm tên hoặc dấu ngoặc."
+
+          # --- CERTBOT_EMAIL (Variable) ---
+          if [[ -z ${CERTBOT_EMAIL:-} ]]; then
+            echo "::error::CERTBOT_EMAIL đang trống. Tạo trong tab Variables (không phải Secrets)."
+            config_error=1
+          elif [[ ! $CERTBOT_EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            echo "::error::CERTBOT_EMAIL sai định dạng email (kiểm tra khoảng trắng hoặc xuống dòng thừa)."
             config_error=1
           fi
+
+          # --- File mẫu Nginx trong repo ---
+          if [[ ! -f $NGINX_TEMPLATE ]]; then
+            echo "::error::Không thấy file mẫu Nginx '$NGINX_TEMPLATE' trong repo. Sửa NGINX_TEMPLATE ở phần env của job deploy."
+            config_error=1
+          fi
+
           if (( config_error != 0 )); then exit 1; fi
-          # Các bước triển khai tiếp theo dùng giá trị đã làm sạch.
-          printf 'DEPLOY_DOMAIN=%s\n' "$DEPLOY_DOMAIN" >> "$GITHUB_ENV"
-          printf 'CERTBOT_EMAIL=%s\n' "$CERTBOT_EMAIL" >> "$GITHUB_ENV"
 
           umask 077
           mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$SERVER_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/qlhvpromax"
-          if ! ssh-keygen -y -P '' -f "$HOME/.ssh/qlhvpromax" >/dev/null 2>&1; then
-            echo "::error::SERVER_SSH_KEY phải là toàn bộ khóa riêng SSH không đặt passphrase."
+          printf '%s\n' "$SERVER_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/deploy-key"
+
+          if ! ssh-keygen -y -P '' -f "$HOME/.ssh/deploy-key" >/dev/null 2>&1; then
+            echo "::error::SERVER_SSH_KEY phải là toàn bộ khóa riêng SSH (gồm cả dòng BEGIN/END), không đặt passphrase."
             exit 1
           fi
+
+          # Ghim vân tay máy chủ nếu có SERVER_HOST_KEY, nếu không thì dùng accept-new
+          if [[ -n ${SERVER_HOST_KEY:-} ]]; then
+            printf '%s\n' "$SERVER_HOST_KEY" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+            host_check=yes
+          else
+            echo "::warning::Chưa có secret SERVER_HOST_KEY nên đang tin vân tay máy chủ ở lần kết nối đầu (accept-new). Nên thêm SERVER_HOST_KEY để an toàn hơn."
+            host_check=accept-new
+          fi
+
           cat > "$HOME/.ssh/config" <<SSH
-          Host qlhvpromax
+          Host deploy-target
             HostName $SERVER_HOST
             User $SERVER_USER
             Port $SERVER_PORT
-            IdentityFile ~/.ssh/qlhvpromax
+            IdentityFile ~/.ssh/deploy-key
             IdentitiesOnly yes
-            StrictHostKeyChecking accept-new
+            StrictHostKeyChecking $host_check
             BatchMode yes
             ConnectTimeout 15
             ServerAliveInterval 15
             ServerAliveCountMax 4
           SSH
-          ssh qlhvpromax 'if [ "$(id -u)" != 0 ]; then sudo -n true; fi'
+
+          if ! ssh deploy-target 'if [ "$(id -u)" != 0 ]; then sudo -n true; fi'; then
+            echo "::error::Không SSH được vào máy chủ, hoặc user không có quyền sudo không cần mật khẩu. Kiểm tra IP/port, khóa công khai trong authorized_keys và sudoers."
+            exit 1
+          fi
 
       - name: Gửi bản phát hành và chỉ đồng bộ Nginx khi mẫu thay đổi
         run: |
-          stage=$(ssh qlhvpromax 'mktemp -d /tmp/qlhvpromax.XXXXXXXX')
+          stage=$(ssh deploy-target 'mktemp -d /tmp/qlhvpromax.XXXXXXXX')
           [[ $stage =~ ^/tmp/qlhvpromax\.[A-Za-z0-9]+$ ]]
           printf 'REMOTE_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+
           prefix=''
-          if [[ $(ssh qlhvpromax 'id -u') != 0 ]]; then prefix='sudo -n '; fi
+          if [[ $(ssh deploy-target 'id -u') != 0 ]]; then prefix='sudo -n '; fi
           printf 'REMOTE_ENTRY=%sbash %s/deploy-server.sh\n' "$prefix" "$stage" >> "$GITHUB_ENV"
 
-          scp -q deploy/deploy-server.sh docker-compose.yml qlhvpromax:"$stage/"
-          local_sha=$(sha256sum qlhvpromax | cut -d' ' -f1)
-          remote_sha=$(ssh qlhvpromax 'if [ -r /opt/qlhvpromax/nginx-source ]; then sha256sum /opt/qlhvpromax/nginx-source | cut -d" " -f1; fi')
+          scp -q deploy/deploy-server.sh docker-compose.yml deploy-target:"$stage/"
+          local_sha=$(sha256sum "$NGINX_TEMPLATE" | cut -d' ' -f1)
+          remote_sha=$(ssh deploy-target 'if [ -r /opt/qlhvpromax/nginx-source ]; then sha256sum /opt/qlhvpromax/nginx-source | cut -d" " -f1; fi')
+
           if [[ $local_sha != "$remote_sha" ]]; then
-            scp -q qlhvpromax qlhvpromax:"$stage/"
+            scp -q "$NGINX_TEMPLATE" deploy-target:"$stage/qlhvpromax"
           else
             echo "Mẫu Nginx trên server khớp commit đang deploy."
           fi
 
       - name: Cài đặt, kiểm tra và kích hoạt site Nginx
-        run: ssh qlhvpromax "$REMOTE_ENTRY setup-nginx $REMOTE_STAGE $DEPLOY_DOMAIN"
+        run: ssh deploy-target "$REMOTE_ENTRY setup-nginx $REMOTE_STAGE $DEPLOY_DOMAIN"
 
       - name: Xin chứng chỉ Let's Encrypt và bật tự gia hạn
-        run: ssh qlhvpromax "$REMOTE_ENTRY install-certificate $REMOTE_STAGE $DEPLOY_DOMAIN $CERTBOT_EMAIL"
+        run: ssh deploy-target "$REMOTE_ENTRY install-certificate $REMOTE_STAGE $DEPLOY_DOMAIN $CERTBOT_EMAIL"
 
       - name: Đưa image lên server, khởi động và kiểm tra HTTPS
         run: |
-          scp -q "$RUNNER_TEMP/qlhvpromax-image/image.tar.gz" qlhvpromax:"$REMOTE_STAGE/"
-          ssh qlhvpromax "$REMOTE_ENTRY release $REMOTE_STAGE $DEPLOY_DOMAIN $GITHUB_SHA"
+          scp -q "$RUNNER_TEMP/qlhvpromax-image/image.tar.gz" deploy-target:"$REMOTE_STAGE/"
+          ssh deploy-target "$REMOTE_ENTRY release $REMOTE_STAGE $DEPLOY_DOMAIN $GITHUB_SHA"
 
       - name: Xác nhận tên miền truy cập được từ bên ngoài
         run: curl -fsS --retry 3 --retry-all-errors --max-time 15 "https://$DEPLOY_DOMAIN/healthz" -o /dev/null
 
       - name: Dọn thư mục upload tạm
         if: always() && env.REMOTE_STAGE != ''
-        run: ssh qlhvpromax "rm -rf -- $REMOTE_STAGE"
+        run: ssh deploy-target "rm -rf -- $REMOTE_STAGE"
