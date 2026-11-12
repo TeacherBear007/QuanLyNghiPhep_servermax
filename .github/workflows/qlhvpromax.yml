@@ -97,24 +97,51 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-        
           SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
         run: |
-          if [[ ! $SERVER_HOST =~ ^[a-zA-Z0-9.:_-]+$ || ! $SERVER_USER =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ||
-                ! $SERVER_PORT =~ ^[1-9][0-9]{0,4}$ || -z $SERVER_SSH_KEY  ]]; then
-            echo "::error::Thiếu hoặc sai cấu hình SSH. Xem README.md."
-            exit 1
+          config_error=0
+
+          if [[ ! ${SERVER_HOST:-} =~ ^[a-zA-Z0-9.:_-]+$ ]]; then
+            echo "::error::SERVER_HOST đang trống hoặc sai định dạng. Nhập IP hoặc hostname SSH."
+            config_error=1
           fi
-          if (( SERVER_PORT > 65535 )); then exit 1; fi
-          if [[ ${#DEPLOY_DOMAIN} -gt 253 || ! $DEPLOY_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ||
-                ! $CERTBOT_EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
-            echo "::error::DEPLOY_DOMAIN hoặc CERTBOT_EMAIL chưa hợp lệ. Dùng tên miền viết thường."
-            exit 1
+
+          if [[ ! ${SERVER_USER:-} =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
+            echo "::error::SERVER_USER đang trống hoặc sai định dạng. Nhập tên tài khoản SSH."
+            config_error=1
           fi
+
+          if [[ -z ${SERVER_SSH_KEY:-} ]]; then
+            echo "::error::SERVER_SSH_KEY đang trống. Kiểm tra Secrets của environment production."
+            config_error=1
+          fi
+
+          if [[ ! ${SERVER_PORT:-} =~ ^[1-9][0-9]{0,4}$ ]] || (( SERVER_PORT > 65535 )); then
+            echo "::error::SERVER_PORT phải từ 1 đến 65535."
+            config_error=1
+          fi
+
+          if [[ ${#DEPLOY_DOMAIN} -gt 253 || ! $DEPLOY_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+            echo "::error::DEPLOY_DOMAIN đang trống hoặc sai. Nhập tên miền viết thường, không kèm https://."
+            config_error=1
+          fi
+
+          if [[ ! $CERTBOT_EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            echo "::error::CERTBOT_EMAIL đang trống hoặc sai định dạng email."
+            config_error=1
+          fi
+
+          if (( config_error != 0 )); then exit 1; fi
+
           umask 077
           mkdir -p "$HOME/.ssh"
-          printf '%s\n' "$SERVER_SSH_KEY" > "$HOME/.ssh/qlhvpromax"
-         
+          printf '%s\n' "$SERVER_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/qlhvpromax"
+
+          if ! ssh-keygen -y -P '' -f "$HOME/.ssh/qlhvpromax" >/dev/null 2>&1; then
+            echo "::error::SERVER_SSH_KEY phải là toàn bộ khóa riêng SSH không đặt passphrase."
+            exit 1
+          fi
+
           cat > "$HOME/.ssh/config" <<SSH
           Host qlhvpromax
             HostName $SERVER_HOST
@@ -122,12 +149,13 @@ jobs:
             Port $SERVER_PORT
             IdentityFile ~/.ssh/qlhvpromax
             IdentitiesOnly yes
-           StrictHostKeyChecking accept-new
+            StrictHostKeyChecking accept-new
             BatchMode yes
             ConnectTimeout 15
             ServerAliveInterval 15
             ServerAliveCountMax 4
           SSH
+
           ssh qlhvpromax 'if [ "$(id -u)" != 0 ]; then sudo -n true; fi'
 
       - name: Gửi bản phát hành và chỉ đồng bộ Nginx khi mẫu thay đổi
@@ -135,6 +163,7 @@ jobs:
           stage=$(ssh qlhvpromax 'mktemp -d /tmp/qlhvpromax.XXXXXXXX')
           [[ $stage =~ ^/tmp/qlhvpromax\.[A-Za-z0-9]+$ ]]
           printf 'REMOTE_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+
           prefix=''
           if [[ $(ssh qlhvpromax 'id -u') != 0 ]]; then prefix='sudo -n '; fi
           printf 'REMOTE_ENTRY=%sbash %s/deploy-server.sh\n' "$prefix" "$stage" >> "$GITHUB_ENV"
@@ -142,6 +171,7 @@ jobs:
           scp -q deploy/deploy-server.sh docker-compose.yml qlhvpromax:"$stage/"
           local_sha=$(sha256sum qlhvpromax | cut -d' ' -f1)
           remote_sha=$(ssh qlhvpromax 'if [ -r /opt/qlhvpromax/nginx-source ]; then sha256sum /opt/qlhvpromax/nginx-source | cut -d" " -f1; fi')
+
           if [[ $local_sha != "$remote_sha" ]]; then
             scp -q qlhvpromax qlhvpromax:"$stage/"
           else
