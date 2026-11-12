@@ -78,8 +78,7 @@ jobs:
       group: qlhvpromax-production
       cancel-in-progress: false
     env:
-      DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
-      CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
+      # DEPLOY_DOMAIN và CERTBOT_EMAIL được làm sạch ở bước "Thiết lập SSH" rồi ghi vào GITHUB_ENV.
       # Đường dẫn file mẫu Nginx trong repo (tính từ thư mục gốc). Đổi ở đây nếu file nằm chỗ khác,
       # ví dụ: deploy/nginx/qlhvpromax.conf
       NGINX_TEMPLATE: qlhvpromax
@@ -105,6 +104,8 @@ jobs:
           SERVER_HOST_KEY: ${{ secrets.SERVER_HOST_KEY }}
           # VARIABLES: Settings -> Secrets and variables -> Actions -> tab "Variables"
           SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+          RAW_DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+          RAW_CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
         run: |
           config_error=0
 
@@ -112,6 +113,13 @@ jobs:
           SERVER_HOST=$(printf '%s' "${SERVER_HOST:-}" | tr -d '[:space:]')
           SERVER_USER=$(printf '%s' "${SERVER_USER:-}" | tr -d '[:space:]')
           SERVER_PORT=$(printf '%s' "${SERVER_PORT:-22}" | tr -d '[:space:]')
+
+          # Domain: bỏ khoảng trắng, viết thường, bỏ http(s):// và dấu / cuối nếu lỡ nhập
+          DEPLOY_DOMAIN=$(printf '%s' "${RAW_DEPLOY_DOMAIN:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+          DEPLOY_DOMAIN=${DEPLOY_DOMAIN#https://}
+          DEPLOY_DOMAIN=${DEPLOY_DOMAIN#http://}
+          DEPLOY_DOMAIN=${DEPLOY_DOMAIN%/}
+          CERTBOT_EMAIL=$(printf '%s' "${RAW_CERTBOT_EMAIL:-}" | tr -d '[:space:]')
 
           # Chỉ in độ dài (không lộ giá trị). Độ dài 0 = giá trị đang trống / nằm sai chỗ / sai tên.
           echo "Độ dài: SERVER_HOST=${#SERVER_HOST} SERVER_USER=${#SERVER_USER} SERVER_SSH_KEY=${#SERVER_SSH_KEY} SERVER_PORT=${#SERVER_PORT} DEPLOY_DOMAIN=${#DEPLOY_DOMAIN} CERTBOT_EMAIL=${#CERTBOT_EMAIL}"
@@ -171,6 +179,9 @@ jobs:
           fi
 
           if (( config_error != 0 )); then exit 1; fi
+
+          # Các bước sau dùng giá trị đã làm sạch
+          printf 'DEPLOY_DOMAIN=%s\nCERTBOT_EMAIL=%s\n' "$DEPLOY_DOMAIN" "$CERTBOT_EMAIL" >> "$GITHUB_ENV"
 
           umask 077
           mkdir -p "$HOME/.ssh"
