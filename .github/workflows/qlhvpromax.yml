@@ -97,11 +97,11 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
-          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+        
           SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
         run: |
           if [[ ! $SERVER_HOST =~ ^[a-zA-Z0-9.:_-]+$ || ! $SERVER_USER =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ||
-                ! $SERVER_PORT =~ ^[1-9][0-9]{0,4}$ || -z $SERVER_SSH_KEY || -z $SERVER_KNOWN_HOSTS ]]; then
+                ! $SERVER_PORT =~ ^[1-9][0-9]{0,4}$ || -z $SERVER_SSH_KEY  ]]; then
             echo "::error::Thiếu hoặc sai cấu hình SSH. Xem README.md."
             exit 1
           fi
@@ -114,7 +114,7 @@ jobs:
           umask 077
           mkdir -p "$HOME/.ssh"
           printf '%s\n' "$SERVER_SSH_KEY" > "$HOME/.ssh/qlhvpromax"
-          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+         
           cat > "$HOME/.ssh/config" <<SSH
           Host qlhvpromax
             HostName $SERVER_HOST
@@ -122,7 +122,7 @@ jobs:
             Port $SERVER_PORT
             IdentityFile ~/.ssh/qlhvpromax
             IdentitiesOnly yes
-            StrictHostKeyChecking yes
+           StrictHostKeyChecking accept-new
             BatchMode yes
             ConnectTimeout 15
             ServerAliveInterval 15
