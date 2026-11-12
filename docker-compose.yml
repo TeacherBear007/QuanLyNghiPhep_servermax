@@ -10,7 +10,7 @@ services:
       - "127.0.0.1:10999:10999"
     environment:
       AllowedHosts: "${QLHV_DOMAIN:-localhost};localhost;127.0.0.1"
-      Deployment__NginxProxyIp: "${QLHV_PROXY_GATEWAY:-172.30.99.1}"
+      Deployment__NginxProxyIp: "${QLHV_PROXY_GATEWAY:-172.16.99.1}"
     volumes:
       - appdata:/app/AppData
     healthcheck:
@@ -31,5 +31,5 @@ networks:
   default:
     ipam:
       config:
-        - subnet: "${QLHV_DOCKER_SUBNET:-172.30.99.0/24}"
-          gateway: "${QLHV_PROXY_GATEWAY:-172.30.99.1}"
+          - subnet: "${QLHV_DOCKER_SUBNET:-172.16.99.0/24}"
+            gateway: "${QLHV_PROXY_GATEWAY:-172.16.99.1}"
