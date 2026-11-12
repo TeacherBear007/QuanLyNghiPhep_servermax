@@ -1,0 +1,283 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<div class="shell @(menuCollapsed ? "menu-collapsed" : "")">
+    <aside class="sidebar">
+        <div class="sidebar-meta"><span class="live-dot"></span> Cổng tra cứu Giáo viên bộ môn</div>
+        <nav class="menu">
+            <div class="menu-caption">GIÁO VIÊN BỘ MÔN</div>
+            <button class="nav-link active">
+                <Icon Name="eye" />Xem đơn nghỉ
+            </button>
+        </nav>
+        <AccountMenu />
+        <div class="sidebar-bottom">
+            <div class="sidebar-person">G</div>
+            <div>
+                <strong>@Session.UserName</strong>
+                <small>@Session.RoleDisplay</small>
+            </div>
+        </div>
+    </aside>
+
+    <div class="workspace">
+        <header class="topbar">
+            <div class="header-right">
+                <span class="date-chip"> @DateTime.Today.ToString("dd/MM/yyyy")</span>
+            </div>
+        </header>
+
+        <main class="content">
+            @if (!string.IsNullOrWhiteSpace(loadError))
+            {
+                <p class="alert error">@loadError</p>
+            }
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <h2> TRA CỨU HỌC VIÊN NGHỈ PHÉP</h2>
+                    </div>
+                    <span class="total-label">@BoMonFilteredRecords.Count lượt nghỉ</span>
+                </div>
+
+                <div class="filters bomon-filters">
+                    <div class="field">
+                        <label>Chọn lớp</label>
+
+                        <select @bind="boMonSelectedClass" @bind:after="OnClassChanged">
+                            <option value="">-- Tất cả các lớp --</option>
+
+                            @foreach (var className in Classes)
+                            {
+                                <option value="@className">@className</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label>Chọn môn học</label>
+
+                        <select @bind="boMonSelectedSubject">
+                            <option value="">-- Tất cả các môn của khoa --</option>
+
+                            @foreach (var subject in BoMonAvailableSubjects)
+                            {
+                                <option value="@subject.Id.ToString()">
+                                    @subject.ClassName — @subject.Code — @subject.Name
+                                </option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field wide">
+                        <label>Tìm theo tên học viên trong lớp</label>
+                        <input @bind="boMonKeyword" @bind:event="oninput"
+                               placeholder="Nhập họ tên học viên cần kiểm tra..." />
+                    </div>
+
+                    <div class="filter-buttons">
+                        <button class="btn outline" @onclick="ResetBoMonFilters"> Đặt lại</button>
+                    </div>
+                </div>
+
+                @if (BoMonFilteredRecords.Any(IsNew))
+                {
+                    <div class="alert success"> Có @BoMonFilteredRecords.Count(IsNew) đơn nghỉ tranh thủ mới được duyệt
+                        trong 3 ngày gần đây (đánh dấu "Mới").</div>
+                    }
+                    <div class="table-scroll">
+                        <table class="leave-table">
+                            <thead>
+                                <tr>
+                                    <th>STT</th>
+                                    <th>HỌ VÀ TÊN HỌC VIÊN</th>
+                                    @if (ShowClassCol)
+                                    {
+                                        <th>LỚP</th>
+                                    }
+                                    <th>NGÀY GIỜ NGHỈ</th>
+                                    <th>SỐ BUỔI NGHỈ</th>
+                                    <th>MÔN HỌC</th>
+                                    <th>LÝ DO NGHỈ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (!BoMonFilteredRecords.Any())
+                                {
+                                    <tr>
+                                        <td class="empty-table" colspan="7">Không có học viên nào nghỉ trong lớp / môn học đang
+                                            chọn.</td>
+                                        </tr>
+                                    }
+                            else
+                                    {
+                                        int stt = 0;
+                                        @foreach (var item in BoMonFilteredRecords)
+                                        {
+                                            stt++;
+                                            <tr @key="item.Id">
+                                                <td><b>@stt</b></td>
+                                                <td>
+                                                    <div class="student-name">@item.HoTen @if (IsNew(item)) {
+                                                        <span
+                                                        class="status-pill status-ok">Mới</span>
+                                                    }
+                                                </div>
+                                                <span class="subtext">@item.MaHocVien</span>
+                                            </td>
+                                            @if (ShowClassCol)
+                                            {
+                                                <td>@item.Lop</td>
+                                            }
+                                            <td>
+                                                <div class="bomon-time-with-tag">
+                                                    <span class="time-main">
+                                                        Ngày @item.TuThoiDiem.ToString("dd/MM/yyyy") (Từ
+                                                        @item.TuThoiDiem.ToString("HH:mm") đến @item.DenThoiDiem.ToString("HH:mm")
+                                                        @(item.TuThoiDiem.Date != item.DenThoiDiem.Date ? $"ngày                     {item.DenThoiDiem:dd/MM/yyyy}" : ""))
+                                                    </span>
+                                                    @if (item.PhanLoaiNghi == LeaveCategories.TranhThu)
+                                                    {
+                                                        @foreach (var tag in item.DanhSachTagMon)
+                                                        {
+                                                            <span class="subject-tag-badge"> @tag</span>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="subject-neutral-badge">@item.HienThiMonHoc</span>
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td><b>@item.SoGio.ToString("0.##") giờ</b></td>
+                                            <td>
+                                                @if (item.PhanLoaiNghi == LeaveCategories.TranhThu)
+                                                {
+                                                    <span class="subject-tag-badge"> @item.HienThiMonHoc</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="subject-neutral-badge">@item.HienThiMonHoc</span>
+                                                }
+                                            </td>
+                                            <td>@item.LyDo</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+@code {
+    @code {
+        [Parameter, EditorRequired]
+        public List<ClassGroup> ClassGroups { get; set; } = new();
+
+        [Parameter, EditorRequired]
+        public List<LeaveRequest> AllRecords { get; set; } = new();
+
+        private readonly bool menuCollapsed = false;
+        private static bool IsNew(LeaveRequest r) => (r.NgayDuyetPhong ?? r.NgayDuyet) is { } d && d >=
+    DateTime.Now.AddDays(-3);
+        private bool ShowClassCol => BoMonFilteredRecords.Select(x => x.Lop).Distinct().Count() > 1;
+        private string boMonSelectedClass = "";
+        private string boMonSelectedSubject = "";
+        private string boMonKeyword = "";
+        private string loadError = "";
+
+        private List<ClassSubject> facultySubjects = new();
+        private List<LeaveRequest> facultyRecords = new();
+
+        protected override void OnParametersSet()
+        {
+            loadError = "";
+            facultySubjects.Clear();
+            facultyRecords.Clear();
+
+            try
+            {
+                facultySubjects = Repository.GetFacultySubjects(Session);
+                facultyRecords = Repository.GetFacultyRequests(Session);
+            }
+            catch (Exception)
+            {
+                loadError = "Không thể tải dữ liệu khoa. Vui lòng tải lại trang.";
+            }
+        }
+
+        private List<string> Classes => facultySubjects
+            .Select(x => x.ClassName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x)
+            .ToList();
+
+        private List<ClassSubject> BoMonAvailableSubjects =>
+            facultySubjects
+                .Where(x =>
+                    string.IsNullOrWhiteSpace(boMonSelectedClass)
+                    || x.ClassName.Equals(
+                        boMonSelectedClass,
+                        StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.ClassName)
+                .ThenBy(x => x.Name)
+                .ToList();
+
+        private List<LeaveRequest> BoMonFilteredRecords
+        {
+            get
+            {
+                var query = facultyRecords.AsEnumerable();
+
+                if (!string.IsNullOrWhiteSpace(boMonSelectedClass))
+                {
+                    query = query.Where(x => x.Lop.Equals(
+                        boMonSelectedClass,
+                        StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(boMonSelectedSubject))
+                {
+                    if (!int.TryParse(
+                        boMonSelectedSubject, out var subjectId))
+                        return new();
+
+                    query = query.Where(x => x.SubjectId == subjectId);
+                }
+
+                if (!string.IsNullOrWhiteSpace(boMonKeyword))
+                {
+                    var keyword = boMonKeyword.Trim();
+
+                    query = query.Where(x =>
+                        x.HoTen.Contains(
+                            keyword,
+                            StringComparison.OrdinalIgnoreCase)
+                        || x.MaHocVien.Contains(
+                            keyword,
+                            StringComparison.OrdinalIgnoreCase));
+                }
+
+                return query
+                    .OrderByDescending(x => x.TuThoiDiem)
+                    .ToList();
+            }
+        }
+
+        private void OnClassChanged()
+        {
+            boMonSelectedSubject = "";
+        }
+
+        private void ResetBoMonFilters()
+        {
+            boMonSelectedClass = "";
+            boMonSelectedSubject = "";
+            boMonKeyword = "";
+        }
+    }
+}
+

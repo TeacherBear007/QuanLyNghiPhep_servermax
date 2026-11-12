@@ -1,0 +1,196 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<section class="panel">
+    <div class="panel-head"><h2>Môn học của lớp @SelectedClass</h2></div>
+    <div class="table-toolbar">
+        <span class="toolbar-count">@Filtered.Count môn học</span>
+        <div class="row-actions">
+            <button type="button" class="btn primary" @onclick="OpenAdd"><Icon Name="plus" />Thêm môn học</button>
+        </div>
+    </div>
+    <div class="filters">
+        <div class="field wide"><label>Tìm kiếm</label><input @bind="keyword" @bind:event="oninput" placeholder="Mã môn hoặc tên môn" /></div>
+        <div class="field"><label>Khoa giảng dạy</label>
+            <select @bind="facultyFilter"><option value="">Tất cả</option>@foreach (var f in subjects.Select(x => x.Faculty).Distinct().OrderBy(x => x)) { <option value="@f">@f</option> }</select></div>
+        <div class="filter-buttons"><button type="button" class="btn outline" @onclick="ResetFilters">Đặt lại</button></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(error) && !showForm) { <div class="alert error">@error</div> }
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="alert success">@message</div> }
+    <div class="table-scroll">
+        <table class="leave-table">
+            <thead>
+                <tr><th>STT</th><th>MÃ MÔN</th><th>TÊN MÔN</th><th>KHOA GIẢNG DẠY</th><th></th></tr>
+            </thead>
+            <tbody>
+                @{ int n = 0; }
+                @foreach (var subject in Filtered)
+                {
+                    n++;
+                    <tr>
+                        <td>@n</td>
+                        <td>@subject.Code</td>
+                        <td><div class="student-name">@subject.Name</div></td>
+                        <td>@subject.Faculty</td>
+                        <td><div class="row-actions">
+                            <button type="button" class="btn outline" @onclick="() => StartEdit(subject)">Sửa</button>
+                            <button type="button" class="btn outline" @onclick="() => Remove(subject)">Xóa</button>
+                        </div></td>
+                    </tr>
+                }
+                @if (Filtered.Count == 0) { <tr><td colspan="5" class="empty-table">@(subjects.Count == 0 ? "Lớp chưa có môn học." : "Không có môn học phù hợp.")</td></tr> }
+            </tbody>
+        </table>
+    </div>
+    <div class="table-pagination"><span>Hiển thị <b>@(Filtered.Count == 0 ? 0 : 1) – @Filtered.Count</b> / @Filtered.Count môn học</span></div>
+</section>
+
+@if (showForm)
+{
+    <div class="overlay">
+        <div class="modal-box wide" @onclick:stopPropagation="true">
+            <div class="panel-head"><h2>@(editingId is null ? "Thêm môn học" : "Sửa môn học") — Lớp @SelectedClass</h2><button type="button" class="btn outline" @onclick="CancelEdit"> Đóng</button></div>
+            @if (!string.IsNullOrWhiteSpace(error)) { <div class="alert error"> @error</div> }
+            <div class="form-grid">
+        <div class="field">
+            <label>Mã môn</label>
+            <input @bind="code"
+                   maxlength="40"
+                   placeholder="Nhập mã môn" />
+        </div>
+
+        <div class="field">
+            <label>Tên môn</label>
+            <input @bind="name"
+                   maxlength="150"
+                   placeholder="Nhập tên môn" />
+        </div>
+
+        <div class="field">
+            <label>Khoa giảng dạy</label>
+            <select @bind="faculty">
+                <option value="">-- Chọn khoa giảng dạy --</option>
+
+                @foreach (var item in faculties)
+                {
+                    <option value="@item.UserId">
+                        @item.FacultyId — @item.Name
+                    </option>
+                }
+            </select>
+
+            @if (faculties.Count == 0)
+            {
+                <small>Chưa có tài khoản khoa. Admin cần tạo tài khoản khoa trước.</small>
+            }
+        </div>
+    </div>
+
+    <div class="row-actions" style="margin-top:12px">
+        <button type="button" class="btn primary" @onclick="SaveSubject">@(editingId is null ? "Thêm môn học" : "Lưu thay đổi")</button>
+        @if (editingId is not null) { <button type="button" class="btn outline" @onclick="CancelEdit">Hủy sửa</button> }
+    </div>
+
+    
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string SelectedClass { get; set; } = "";
+
+    private string code = "";
+    private string name = "";
+    private string faculty = "";
+    private string error = "";
+    private string message = "";
+
+    private List<ClassSubject> subjects = new();
+    private List<FacultyOption> faculties = new();
+    private string loadedClass = "";
+
+    protected override void OnParametersSet()
+    {
+        if (loadedClass == SelectedClass)
+            return;
+
+        error = "";
+        message = "";
+        code = "";
+        name = "";
+        faculty = "";
+        subjects.Clear();
+
+        try
+        {
+            faculties = Repository.GetFacultyOptions(Session);
+            subjects = Repository.GetClassSubjects(
+                Session, SelectedClass);
+
+            loadedClass = SelectedClass;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private string keyword = "", facultyFilter = "";
+    private List<ClassSubject> Filtered => subjects.Where(x =>
+        (string.IsNullOrWhiteSpace(keyword) || x.Code.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase) || x.Name.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase))
+        && (facultyFilter == "" || x.Faculty == facultyFilter)).ToList();
+    private void ResetFilters() { keyword = ""; facultyFilter = ""; }
+    private bool showForm;
+    private void OpenAdd() { editingId = null; code = name = faculty = ""; error = message = ""; showForm = true; }
+    private int? editingId;
+    private void StartEdit(ClassSubject x) { editingId = x.Id; code = x.Code; name = x.Name; faculty = x.FacultyUserId; error = message = ""; showForm = true; }
+    private void CancelEdit() { editingId = null; code = name = faculty = ""; showForm = false; error = ""; }
+    private void Remove(ClassSubject x)
+    {
+        error = message = "";
+        try { Repository.DeleteClassSubject(Session, x.Id); subjects = Repository.GetClassSubjects(Session, SelectedClass); message = "Đã xóa môn học."; }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+    private void SaveSubject()
+    {
+        if (editingId is null) { AddSubject(); return; }
+        error = message = "";
+        try
+        {
+            Repository.UpdateClassSubject(Session, editingId.Value, code, name, faculty);
+            subjects = Repository.GetClassSubjects(Session, SelectedClass);
+            CancelEdit(); message = "Đã cập nhật môn học.";
+        }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+    private void AddSubject()
+    {
+        error = "";
+        message = "";
+
+        try
+        {
+            Repository.AddClassSubject(
+                Session,
+                SelectedClass,
+                code,
+                name,
+                faculty);
+
+            subjects = Repository.GetClassSubjects(
+                Session, SelectedClass);
+
+            code = "";
+            name = "";
+            faculty = "";
+
+            message = "Đã thêm môn học vào lớp.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}
+

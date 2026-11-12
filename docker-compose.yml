@@ -1,0 +1,35 @@
+name: qlhvpromax
+
+services:
+  qlhvpromax:
+    image: qlhvpromax:${QLHV_IMAGE_TAG:-local}
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:10999:10999"
+    environment:
+      AllowedHosts: "${QLHV_DOMAIN:-localhost};localhost;127.0.0.1"
+      Deployment__NginxProxyIp: "${QLHV_PROXY_GATEWAY:-172.30.99.1}"
+    volumes:
+      - appdata:/app/AppData
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "4", "http://127.0.0.1:10999/healthz"]
+      interval: 5s
+      timeout: 5s
+      start_period: 15s
+      retries: 10
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  appdata:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: "${QLHV_DOCKER_SUBNET:-172.30.99.0/24}"
+          gateway: "${QLHV_PROXY_GATEWAY:-172.30.99.1}"

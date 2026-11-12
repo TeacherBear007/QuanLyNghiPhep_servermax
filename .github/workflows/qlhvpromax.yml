@@ -1,0 +1,167 @@
+name: CI/CD QLHV Pro Max
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  ci:
+    name: Build và kiểm thử
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      QLHV_IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - name: Checkout đúng commit
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Cài .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cài Node.js cho kiểm thử
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Restore và build Release
+        run: |
+          dotnet restore QuanLyNghiPhep.sln
+          dotnet build QuanLyNghiPhep.sln -c Release --no-restore
+
+      - name: Kiểm thử nghiệp vụ, HTTP và JavaScript
+        run: |
+          dotnet run --project Tests/QuanLyNghiPhep.Tests.csproj -c Release --no-build
+          node Tests/http_smoke.mjs
+          node Tests/login_ui.mjs
+
+      - name: Build image và kiểm tra Nginx, HTTPS, WebSocket
+        run: bash deploy/ci-smoke.sh
+
+      - name: Đóng gói image đã kiểm thử
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: docker image save "qlhvpromax:$QLHV_IMAGE_TAG" | gzip -1 > "$RUNNER_TEMP/image.tar.gz"
+
+      - name: Lưu image để deploy
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qlhvpromax-image
+          path: ${{ runner.temp }}/image.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  deploy:
+    name: Deploy server production
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: https://${{ vars.DEPLOY_DOMAIN }}
+    concurrency:
+      group: qlhvpromax-production
+      cancel-in-progress: false
+    env:
+      DEPLOY_DOMAIN: ${{ vars.DEPLOY_DOMAIN }}
+      CERTBOT_EMAIL: ${{ vars.CERTBOT_EMAIL }}
+    steps:
+      - name: Checkout Docker Compose và mẫu Nginx
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Tải image đã qua CI
+        uses: actions/download-artifact@v4
+        with:
+          name: qlhvpromax-image
+          path: ${{ runner.temp }}/qlhvpromax-image
+
+      - name: Thiết lập SSH và xác thực máy chủ
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_KNOWN_HOSTS: ${{ secrets.SERVER_KNOWN_HOSTS }}
+          SERVER_PORT: ${{ vars.SERVER_PORT || '22' }}
+        run: |
+          if [[ ! $SERVER_HOST =~ ^[a-zA-Z0-9.:_-]+$ || ! $SERVER_USER =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ||
+                ! $SERVER_PORT =~ ^[1-9][0-9]{0,4}$ || -z $SERVER_SSH_KEY || -z $SERVER_KNOWN_HOSTS ]]; then
+            echo "::error::Thiếu hoặc sai cấu hình SSH. Xem README.md."
+            exit 1
+          fi
+          if (( SERVER_PORT > 65535 )); then exit 1; fi
+          if [[ ${#DEPLOY_DOMAIN} -gt 253 || ! $DEPLOY_DOMAIN =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ||
+                ! $CERTBOT_EMAIL =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+            echo "::error::DEPLOY_DOMAIN hoặc CERTBOT_EMAIL chưa hợp lệ. Dùng tên miền viết thường."
+            exit 1
+          fi
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          printf '%s\n' "$SERVER_SSH_KEY" > "$HOME/.ssh/qlhvpromax"
+          printf '%s\n' "$SERVER_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          cat > "$HOME/.ssh/config" <<SSH
+          Host qlhvpromax
+            HostName $SERVER_HOST
+            User $SERVER_USER
+            Port $SERVER_PORT
+            IdentityFile ~/.ssh/qlhvpromax
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          SSH
+          ssh qlhvpromax 'if [ "$(id -u)" != 0 ]; then sudo -n true; fi'
+
+      - name: Gửi bản phát hành và chỉ đồng bộ Nginx khi mẫu thay đổi
+        run: |
+          stage=$(ssh qlhvpromax 'mktemp -d /tmp/qlhvpromax.XXXXXXXX')
+          [[ $stage =~ ^/tmp/qlhvpromax\.[A-Za-z0-9]+$ ]]
+          printf 'REMOTE_STAGE=%s\n' "$stage" >> "$GITHUB_ENV"
+          prefix=''
+          if [[ $(ssh qlhvpromax 'id -u') != 0 ]]; then prefix='sudo -n '; fi
+          printf 'REMOTE_ENTRY=%sbash %s/deploy-server.sh\n' "$prefix" "$stage" >> "$GITHUB_ENV"
+
+          scp -q deploy/deploy-server.sh docker-compose.yml qlhvpromax:"$stage/"
+          local_sha=$(sha256sum qlhvpromax | cut -d' ' -f1)
+          remote_sha=$(ssh qlhvpromax 'if [ -r /opt/qlhvpromax/nginx-source ]; then sha256sum /opt/qlhvpromax/nginx-source | cut -d" " -f1; fi')
+          if [[ $local_sha != "$remote_sha" ]]; then
+            scp -q qlhvpromax qlhvpromax:"$stage/"
+          else
+            echo "Mẫu Nginx trên server khớp commit đang deploy."
+          fi
+
+      - name: Cài đặt, kiểm tra và kích hoạt site Nginx
+        run: ssh qlhvpromax "$REMOTE_ENTRY setup-nginx $REMOTE_STAGE $DEPLOY_DOMAIN"
+
+      - name: Xin chứng chỉ Let's Encrypt và bật tự gia hạn
+        run: ssh qlhvpromax "$REMOTE_ENTRY install-certificate $REMOTE_STAGE $DEPLOY_DOMAIN $CERTBOT_EMAIL"
+
+      - name: Đưa image lên server, khởi động và kiểm tra HTTPS
+        run: |
+          scp -q "$RUNNER_TEMP/qlhvpromax-image/image.tar.gz" qlhvpromax:"$REMOTE_STAGE/"
+          ssh qlhvpromax "$REMOTE_ENTRY release $REMOTE_STAGE $DEPLOY_DOMAIN $GITHUB_SHA"
+
+      - name: Xác nhận tên miền truy cập được từ bên ngoài
+        run: curl -fsS --retry 3 --retry-all-errors --max-time 15 "https://$DEPLOY_DOMAIN/healthz" -o /dev/null
+
+      - name: Dọn thư mục upload tạm
+        if: always() && env.REMOTE_STAGE != ''
+        run: ssh qlhvpromax "rm -rf -- $REMOTE_STAGE"

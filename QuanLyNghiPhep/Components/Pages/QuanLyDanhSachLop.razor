@@ -1,0 +1,445 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+@inject AdminService Accounts
+
+@if (string.IsNullOrWhiteSpace(selectedClassToManage))
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <h2>Danh sách các lớp</h2>
+            </div>
+        </div>
+
+        <div class="table-toolbar">
+            <span class="toolbar-count">@ClassGroups.Count lớp · @AllStudents.Count học viên</span>
+            <div class="row-actions">
+                <button type="button" class="btn outline" @onclick="OnOpenImportClass"><Icon Name="upload" />Nhập từ Excel</button>
+                <button type="button" class="btn primary" @onclick="OnOpenCreateClass"><Icon Name="plus" />Tạo lớp mới</button>
+            </div>
+        </div>
+
+        <div class="table-scroll">
+            <table class="leave-table">
+                <thead>
+                    <tr>
+                        <th style="width:80px">STT</th>
+                        <th>TÊN LỚP</th>
+                        <th>TÀI KHOẢN CHỦ NHIỆM LỚP QUẢN LÝ</th>
+                        <th>QUÂN SỐ HỌC VIÊN</th>
+                        <th>TỔNG LƯỢT NGHỈ PHÉP</th>
+                        <th style="width:250px">THAO TÁC QUẢN LÝ</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!ClassGroups.Any())
+                    {
+                        <tr>
+                            <td class="empty-table" colspan="6">Chưa có lớp nào trong hệ thống. Hãy tạo lớp mới.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int stt = 0;
+                        @foreach (var cls in ClassGroups)
+                        {
+                            stt++;
+                            int countHv = AllStudents.Count(x => x.Lop.Equals(cls.TenLop, StringComparison.OrdinalIgnoreCase));
+                            int countDon = AllRecords.Count(x => x.Lop.Equals(cls.TenLop, StringComparison.OrdinalIgnoreCase));
+                            <tr>
+                                <td><b>@stt</b></td>
+                                <td>
+                                    <span class="class-badge" style="font-size: 16px;">Lớp @cls.TenLop</span>
+                                </td>
+                                <td>
+                                    <b> @(string.IsNullOrWhiteSpace(cls.NguoiTao) ? "" : cls.NguoiTao)</b>
+                                    <span class="subtext">Chủ nhiệm lớp</span>
+                                </td>
+                                <td><b>@countHv</b> học viên</td>
+                                <td><b>@countDon</b> lượt nghỉ</td>
+                                <td>
+                                    <button type="button" class="btn small primary" @onclick="() => OpenManageClass(cls)">
+                                         Xem &amp; Quản lý học viên →
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+else
+{
+    <section class="panel">
+        <div class="panel-head">
+            <div>
+                <h2> QUẢN LÝ DANH SÁCH HỌC VIÊN — LỚP @selectedClassToManage</h2>
+            </div>
+            <div class="heading-actions">
+                <button class="btn outline" @onclick="BackToClassTable">← Quay lại danh sách các lớp</button>
+                <button class="btn primary" @onclick="ToggleAddStudentForm">@(showAddStudentForm ? "× Đóng khung thêm" : " Thêm học viên mới")
+                </button>
+            </div>
+        </div>
+
+        <div class="class-management-toolbar">
+            <div class="field wide">
+                <label>Tìm kiếm học viên trong lớp @selectedClassToManage</label>
+                <input @bind="studentSearch" @bind:event="oninput" placeholder="Nhập họ tên, mã học viên hoặc số điện thoại..." />
+            </div>
+            <div class="field">
+                <label>Tài khoản Chủ nhiệm lớp quản lý lớp @selectedClassToManage</label>
+                <select @bind="editingClassManager">
+                    <option value="">-- Chọn chủ nhiệm lớp --</option>
+                    @if (!trungDoiAccounts.Contains(editingClassManager) && !string.IsNullOrWhiteSpace(editingClassManager))
+                    {
+                        <option value="@editingClassManager">@editingClassManager</option>
+                    }
+                    @foreach (var acc in trungDoiAccounts)
+                    {
+                        <option value="@acc">@acc (Chủ nhiệm lớp)</option>
+                    }
+                </select>
+            </div>
+            <div class="filter-buttons">
+                <button class="btn primary" @onclick="SaveClassManager"> Lưu phân công</button>
+                <button class="btn outline" @onclick="() => studentSearch = string.Empty"> Đặt lại</button>
+            </div>
+            <div class="field">
+                <label>Đổi tên lớp</label>
+                <input @bind="renameTo" maxlength="60" placeholder="Tên lớp mới" />
+            </div>
+            <div class="filter-buttons">
+                <button class="btn outline" @onclick="RenameClass">Đổi tên</button>
+                <button class="btn danger" @onclick="() => confirmDeleteClass = true">Xóa lớp</button>
+            </div>
+            @if (confirmDeleteClass)
+            {
+                <div class="alert error" style="grid-column:1/-1">
+                    Xóa lớp <b>@selectedClassToManage</b> cùng toàn bộ học viên? Chỉ xóa được lớp chưa có đơn nghỉ.
+                    <button class="btn danger" @onclick="DeleteClass">Xác nhận xóa</button>
+                    <button class="btn outline" @onclick="() => confirmDeleteClass = false">Hủy</button>
+                </div>
+            }
+        </div>
+
+        @if (showAddStudentForm)
+        {
+            <div class="form-body batch-creator-box" style="margin: 16px 24px;">
+                <div class="step-banner">
+                    <b>THÊM HỌC VIÊN MỚI VÀO LỚP @selectedClassToManage:</b> Nhập đầy đủ họ tên, ngày sinh và số điện thoại.
+                </div>
+                <div class="form-grid">
+                    <div class="field">
+                        <label>Họ và tên học viên <em>*</em></label>
+                        <input @bind="newStudent.HoTen" placeholder="Ví dụ: Nguyễn Văn A" />
+                    </div>
+                    <div class="field">
+                        <label>Ngày sinh <em>*</em></label>
+                        <input @bind="newStudent.NgaySinh" placeholder="dd/MM/yyyy (VD: 15/05/2005)" />
+                    </div>
+                    <div class="field">
+                        <label>Số điện thoại <em>*</em></label>
+                        <input @bind="newStudent.SoDienThoai" placeholder="Ví dụ: 0912345678" />
+                    </div>
+                    <div class="field">
+                        <label>Mã học viên (Để trống sẽ tự sinh)</label>
+                        <input @bind="newStudent.MaHocVien" placeholder="Tự động sinh nếu để trống" />
+                    </div>
+                </div>
+                <div class="form-footer">
+                    <span>Học viên mới sẽ được thêm trực tiếp vào lớp <b>@selectedClassToManage</b>.</span>
+                    <div>
+                        <button class="btn outline" @onclick="() => showAddStudentForm = false">Hủy</button>
+                        <button class="btn primary" @onclick="CreateSingleStudent"> Lưu học viên mới</button>
+                    </div>
+                </div>
+            </div>
+        }
+
+        <div class="table-scroll">
+            <table class="leave-table editable-table">
+                <thead>
+                    <tr>
+                        <th style="width:70px">STT</th>
+                        <th>TÊN HỌC VIÊN</th>
+                        <th style="width:170px">NGÀY SINH</th>
+                        <th style="width:190px">SỐ ĐIỆN THOẠI</th>
+                        <th style="width:140px">TỔNG LƯỢT NGHỈ</th>
+                        <th>TRẠNG THÁI</th>
+                        <th style="width:250px">THAO TÁC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (!FilteredClassStudents.Any())
+                    {
+                        <tr>
+                            <td class="empty-table" colspan="7">Không tìm thấy học viên nào trong lớp @selectedClassToManage.</td>
+                        </tr>
+                    }
+                    else
+                    {
+                        int idx = 0;
+                        @foreach (var s in FilteredClassStudents)
+                        {
+                            idx++;
+                            bool isEditing = editingStudentCode == s.MaHocVien && editingDraft is not null;
+                            <tr>
+                                <td><b>@idx</b></td>
+                                @if (isEditing && editingDraft is not null)
+                                {
+                                    <td>
+                                        <input class="table-input" @bind="editingDraft.HoTen" placeholder="Họ và tên..." />
+                                        <span class="subtext">Mã HV: @s.MaHocVien</span>
+                                        <label>Lớp</label><input class="table-input" @bind="editingDraft.Lop" placeholder="Lớp..." />
+                                    </td>
+                                    <td>
+                                        <input class="table-input" @bind="editingDraft.NgaySinh" placeholder="dd/MM/yyyy" />
+                                    </td>
+                                    <td>
+                                        <input class="table-input" @bind="editingDraft.SoDienThoai" placeholder="Số điện thoại" />
+                                    </td>
+                                    <td>
+                                        <b>@AllRecords.Count(x => x.Lop.Equals(s.Lop, StringComparison.OrdinalIgnoreCase) && x.MaHocVien == s.MaHocVien)</b> lượt
+                                    </td>
+                                    <td>@(s.IsActive?"Đang theo dõi":"Ngừng theo dõi")</td>
+                                    <td>
+                                        <div class="table-actions">
+                                            <button type="button" class="btn small primary" @onclick="SaveEditStudent"> Lưu</button>
+                                            <button type="button" class="btn small outline" @onclick="CancelEditStudent">Hủy</button>
+                                        </div>
+                                    </td>
+                                }
+                                else
+                                {
+                                    <td>
+                                        <div class="student-name">@s.HoTen</div>
+                                        <span class="subtext">@s.MaHocVien</span>
+                                    </td>
+                                    <td>@s.NgaySinh</td>
+                                    <td>@s.SoDienThoai</td>
+                                    <td>
+                                        <b>@AllRecords.Count(x => x.Lop.Equals(s.Lop, StringComparison.OrdinalIgnoreCase) && x.MaHocVien == s.MaHocVien)</b> lượt
+                                    </td>
+                                    <td>@(s.IsActive?"Đang theo dõi":"Ngừng theo dõi")</td>
+                                    <td>
+                                        <div class="table-actions">
+                                            <button type="button" class="btn small outline" @onclick="() => StartEditStudent(s)"> Sửa</button>
+                                            @if(s.IsActive)
+                                            {
+                                                <button type="button" class="btn small danger" @onclick="()=>pendingRemoval=s">Ngừng theo dõi / Xóa</button>
+                                            }
+                                            else { <button type="button" class="btn small primary" @onclick="()=>RestoreStudent(s)">Khôi phục</button> }
+                                        </div>
+                                    </td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@if(pendingRemoval is { } target)
+{
+    <div class="overlay"><div class="modal form-body" role="dialog" aria-modal="true">
+        <h2>Xác nhận xử lý học viên @target.HoTen</h2>
+        <p>Học viên có hồ sơ sẽ được chuyển sang ngừng theo dõi, giữ nguyên toàn bộ đơn nghỉ và lịch sử. Chỉ hồ sơ chưa phát sinh dữ liệu mới bị xóa hẳn.</p>
+        <button class="btn danger" @onclick="()=>RemoveStudent(target)">Xác nhận</button>
+        <button class="btn outline" @onclick="()=>pendingRemoval=null">Hủy</button>
+    </div></div>
+}
+@code {
+    private Student? pendingRemoval;
+    [Parameter, EditorRequired] public List<ClassGroup> ClassGroups { get; set; } = new();
+    [Parameter, EditorRequired] public List<Student> AllStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> AllRecords { get; set; } = new();
+    [Parameter] public EventCallback OnOpenCreateClass { get; set; }
+    [Parameter] public EventCallback OnOpenImportClass { get; set; }
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private string selectedClassToManage = "";
+    private string editingClassManager = "";
+    private List<string> trungDoiAccounts = new();
+    private string studentSearch = "";
+
+    private bool showAddStudentForm = false;
+    private Student newStudent = new() { NgaySinh = "" };
+
+    private string editingStudentCode = "";
+    private Student? editingDraft;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTrungDoiAccounts();
+    }
+
+    private async Task LoadTrungDoiAccounts()
+    {
+        try
+        {
+            trungDoiAccounts = await Accounts.ListTrungDoiUsers(Session);
+
+        }
+        catch (Exception ex)
+        {
+            trungDoiAccounts = new();
+            await OnError.InvokeAsync(ValidationRules.ErrorMessage(ex));
+        }
+    }
+
+    private List<Student> FilteredClassStudents => AllStudents
+        .Where(x => x.Lop.Equals(selectedClassToManage, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrWhiteSpace(studentSearch)
+            || x.HoTen.Contains(studentSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.MaHocVien.Contains(studentSearch.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.SoDienThoai.Contains(studentSearch.Trim(), StringComparison.OrdinalIgnoreCase))
+        .OrderBy(x => x.STT)
+        .ToList();
+
+    private async Task OpenManageClass(ClassGroup cls)
+    {
+        await LoadTrungDoiAccounts();
+        selectedClassToManage = cls.TenLop;
+        editingClassManager = string.IsNullOrWhiteSpace(cls.NguoiTao) ? "" : cls.NguoiTao;
+        studentSearch = "";
+        showAddStudentForm = false;
+        editingStudentCode = "";
+        editingDraft = null;
+        await OnError.InvokeAsync("");
+        await OnNotice.InvokeAsync("");
+    }
+
+    private string renameTo = "";
+    private bool confirmDeleteClass;
+    private async Task RenameClass()
+    {
+        try
+        {
+            var old = selectedClassToManage;
+            Repository.RenameClass(Session, old, renameTo);
+            selectedClassToManage = renameTo.Trim(); renameTo = "";
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã đổi tên lớp {old} thành {selectedClassToManage}.");
+        }
+        catch (Exception ex) { await OnError.InvokeAsync(ValidationRules.ErrorMessage(ex)); }
+    }
+    private async Task DeleteClass()
+    {
+        try
+        {
+            var old = selectedClassToManage;
+            Repository.DeleteClass(Session, old);
+            confirmDeleteClass = false; selectedClassToManage = "";
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã xóa lớp {old}.");
+        }
+        catch (Exception ex) { confirmDeleteClass = false; await OnError.InvokeAsync(ValidationRules.ErrorMessage(ex)); }
+    }
+
+    private async Task BackToClassTable()
+    {
+        selectedClassToManage = "";
+        editingStudentCode = "";
+        editingDraft = null;
+        showAddStudentForm = false;
+        await OnError.InvokeAsync("");
+    }
+
+    private async Task SaveClassManager()
+    {
+        try
+        {
+            Repository.UpdateClassManager(Session, selectedClassToManage, editingClassManager);
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã phân công lớp {selectedClassToManage} cho tài khoản Chủ nhiệm lớp \"{editingClassManager}\".");
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(ex is ArgumentException or BusinessRuleException or UserAccessException?ex.Message:"Không thể hoàn tất thao tác. Hãy kiểm tra dữ liệu và thử lại.");
+        }
+    }
+
+    private void ToggleAddStudentForm()
+    {
+        showAddStudentForm = !showAddStudentForm;
+        newStudent = new Student
+        {
+            Lop = selectedClassToManage,
+            NgaySinh = "",
+            SoDienThoai = ""
+        };
+    }
+
+    private async Task CreateSingleStudent()
+    {
+        try
+        {
+            newStudent.Lop = selectedClassToManage;
+            var created = Repository.AddStudent(Session, newStudent);
+            showAddStudentForm = false;
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã thêm học viên {created.HoTen} ({created.MaHocVien}) vào lớp {selectedClassToManage}.");
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(ex is ArgumentException or BusinessRuleException or UserAccessException?ex.Message:"Không thể hoàn tất thao tác. Hãy kiểm tra dữ liệu và thử lại.");
+        }
+    }
+
+    private void StartEditStudent(Student s)
+    {
+        editingStudentCode = s.MaHocVien;
+        editingDraft = s.Clone();
+    }
+
+    private void CancelEditStudent()
+    {
+        editingStudentCode = "";
+        editingDraft = null;
+    }
+
+    private async Task SaveEditStudent()
+    {
+        if (editingDraft is null || string.IsNullOrWhiteSpace(editingStudentCode)) return;
+        try
+        {
+            Repository.UpdateStudent(Session, editingStudentCode, editingDraft);
+            string savedName = editingDraft.HoTen;
+            editingStudentCode = "";
+            editingDraft = null;
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã cập nhật thông tin học viên {savedName}.");
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(ex is ArgumentException or BusinessRuleException or UserAccessException?ex.Message:"Không thể hoàn tất thao tác. Hãy kiểm tra dữ liệu và thử lại.");
+        }
+    }
+
+    private async Task RemoveStudent(Student s)
+    {
+        try
+        {
+            bool deleted=Repository.DeleteStudent(Session, s.MaHocVien);
+            pendingRemoval=null;
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync(deleted?$"Đã xóa hồ sơ chưa sử dụng của {s.HoTen}.":$"Đã ngừng theo dõi {s.HoTen}; giữ nguyên hồ sơ lịch sử.");
+        }
+        catch (Exception ex)
+        {
+            await OnError.InvokeAsync(ex is ArgumentException or BusinessRuleException or UserAccessException?ex.Message:"Không thể hoàn tất thao tác. Hãy kiểm tra dữ liệu và thử lại.");
+        }
+    }
+    private async Task RestoreStudent(Student student)
+    {
+        try { Repository.ReactivateStudent(Session,student.MaHocVien);await OnDataChanged.InvokeAsync();await OnNotice.InvokeAsync($"Đã khôi phục theo dõi {student.HoTen}."); }
+        catch(Exception ex) { await OnError.InvokeAsync(ex is ArgumentException or UserAccessException?ex.Message:"Không thể khôi phục hồ sơ."); }
+    }
+}

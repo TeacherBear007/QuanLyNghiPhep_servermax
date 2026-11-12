@@ -1,0 +1,103 @@
+@inject AppSession Session
+@inject IJSRuntime JS
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Danh sách học viên lớp @SelectedClass</h2>
+        <div class="row-actions">
+            <span>@Filtered.Count / @ClassStudents.Count học viên</span>
+            <button class="btn outline" @onclick="Export"><Icon Name="download" />Xuất Excel</button>
+        </div>
+    </div>
+    <div class="filters">
+        <div class="field wide"><label>Tìm kiếm</label><input @bind="keyword" @bind:event="oninput" placeholder="Họ tên, mã học viên, số điện thoại" /></div>
+        <div class="field"><label>Số lượt nghỉ</label>
+            <select @bind="leaveFilter">
+                <option value="">Tất cả</option>
+                <option value="none">Chưa nghỉ lượt nào</option>
+                <option value="some">Đã nghỉ</option>
+                <option value="many">Nghỉ từ 3 lượt</option>
+            </select></div>
+        <div class="field"><label>Sắp xếp</label>
+            <select @bind="sort">
+                <option value="stt">Số thứ tự</option>
+                <option value="name">Tên A-Z</option>
+                <option value="leave">Nghỉ nhiều nhất</option>
+            </select></div>
+        <div class="filter-buttons"><button class="btn outline" @onclick="Reset">Đặt lại</button></div>
+    </div>
+    @if (!string.IsNullOrEmpty(error)) { <div class="alert error">@error</div> }
+    <div class="table-scroll">
+        <table class="leave-table">
+            <thead>
+                <tr><th>STT</th><th>TÊN HỌC VIÊN</th><th>NGÀY SINH</th><th>SỐ ĐIỆN THOẠI</th><th>SỐ LƯỢT NGHỈ</th></tr>
+            </thead>
+            <tbody>
+                @for (int i = 0; i < Filtered.Count; i++)
+                {
+                    var s = Filtered[i];
+                    <tr>
+                        <td>@(i + 1)</td>
+                        <td><div class="student-name">@s.HoTen</div><span class="subtext">@s.MaHocVien</span></td>
+                        <td>@s.NgaySinh</td>
+                        <td>@s.SoDienThoai</td>
+                        <td>@Count(s) lượt</td>
+                    </tr>
+                }
+                @if (Filtered.Count == 0) { <tr><td colspan="5" class="empty-table">Không có học viên phù hợp.</td></tr> }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<Student> ClassStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> ClassRecords { get; set; } = new();
+
+    private string keyword = "", leaveFilter = "", sort = "stt", error = "";
+    private int Count(Student s) => ClassRecords.Count(x => x.MaHocVien == s.MaHocVien && x.TrangThai != LeaveStatuses.Cancelled && x.TrangThai != LeaveStatuses.Rejected);
+
+    private List<Student> Filtered
+    {
+        get
+        {
+            var q = ClassStudents.Where(s => string.IsNullOrWhiteSpace(keyword)
+                || s.HoTen.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+                || s.MaHocVien.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+                || s.SoDienThoai.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase));
+            q = leaveFilter switch
+            {
+                "none" => q.Where(s => Count(s) == 0),
+                "some" => q.Where(s => Count(s) > 0),
+                "many" => q.Where(s => Count(s) >= 3),
+                _ => q
+            };
+            q = sort switch
+            {
+                "name" => q.OrderBy(s => s.HoTen, StringComparer.CurrentCultureIgnoreCase),
+                "leave" => q.OrderByDescending(s => Count(s)).ThenBy(s => s.STT),
+                _ => q.OrderBy(s => s.STT)
+            };
+            return q.ToList();
+        }
+    }
+
+    private void Reset() { keyword = ""; leaveFilter = ""; sort = "stt"; }
+
+    private async Task Export()
+    {
+        error = "";
+        try
+        {
+            if (!Session.CanExport) throw new UserAccessException("Vai trò hiện tại không được xuất Excel.");
+            var rows = new List<string[]> { new[] { "STT", "Mã học viên", "Họ tên", "Ngày sinh", "Số điện thoại", "Số lượt nghỉ" } };
+            int n = 0;
+            foreach (var s in Filtered) rows.Add(new[] { (++n).ToString(), s.MaHocVien, s.HoTen, s.NgaySinh, s.SoDienThoai, Count(s).ToString() });
+            var bytes = ExcelExporter.BuildTable("Học viên " + SelectedClass, rows);
+            await JS.InvokeVoidAsync("leaveApp.downloadBase64", $"HocVien_{SelectedClass}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+}

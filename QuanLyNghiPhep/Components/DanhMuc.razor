@@ -1,0 +1,37 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<div class="catalog-grid holiday-only">
+    <section class="panel">
+        <div class="panel-head"><h2>Lịch nghỉ lễ / Tết</h2></div>
+        <div class="catalog-form">
+            <div class="field span-2"><label>Tên đợt nghỉ</label><input @bind="hName" maxlength="300" placeholder="Ví dụ: Nghỉ lễ Quốc khánh 2-9" /></div>
+            <div class="field"><label>Từ ngày</label><input type="date" @bind="hFrom" @bind:format="yyyy-MM-dd" /></div>
+            <div class="field"><label>Đến ngày</label><input type="date" @bind="hTo" @bind:format="yyyy-MM-dd" /></div>
+            <div class="catalog-actions"><button class="btn primary" @onclick="AddHoliday"><Icon Name="plus" />Thêm đợt nghỉ</button></div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(hError)) { <div class="alert error">@hError</div> }
+        @if (!string.IsNullOrWhiteSpace(hMessage)) { <div class="alert success">@hMessage</div> }
+        <div class="table-scroll"><table class="leave-table">
+            <thead><tr><th>ĐỢT NGHỈ</th><th>THỜI GIAN</th><th></th></tr></thead>
+            <tbody>
+                @foreach (var h in holidays)
+                {
+                    <tr><td>@h.Name</td><td>@h.FromDate.ToString("dd/MM/yyyy") – @h.ToDate.ToString("dd/MM/yyyy")</td><td><div class="row-actions"><button class="btn outline" @onclick="() => DeleteHoliday(h.Id)">Xóa</button></div></td></tr>
+                }
+                @if (holidays.Count == 0) { <tr><td colspan="3" class="empty-table">Chưa có đợt nghỉ nào.</td></tr> }
+            </tbody></table></div>
+    </section>
+
+</div>
+
+@code {
+    private List<Holiday> holidays = new();
+    private string hName = "", hError = "", hMessage = "";
+    private DateTime hFrom = DateTime.Today, hTo = DateTime.Today.AddDays(2);
+    protected override void OnInitialized() => Load();
+    private void Load() { holidays = Repository.GetHolidays(Session); }
+    private void RunH(Action work, string ok) { hError = hMessage = ""; try { work(); Load(); hMessage = ok; } catch (Exception ex) { hError = ValidationRules.ErrorMessage(ex); } }
+    private void AddHoliday() => RunH(() => { Repository.AddHoliday(Session, hName, hFrom.Date.AddHours(17), hTo.Date.AddHours(17)); hName = ""; }, "Đã thêm đợt nghỉ.");
+    private void DeleteHoliday(int id) => RunH(() => Repository.DeleteHoliday(Session, id), "Đã xóa đợt nghỉ.");
+}

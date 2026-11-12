@@ -1,0 +1,113 @@
+<div class="stats-grid">
+    <div class="stat-card">
+        <div>
+            <span>TỔNG DỮ LIỆU LƯU TRỮ</span>
+            <strong>@AllRecords.Count</strong>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div>
+            <span>NGHỈ PHÉP CUỐI TUẦN</span>
+            <strong>@AllRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.CuoiTuan)</strong>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div>
+            <span>NGHỈ LỄ / TẾT</span>
+            <strong>@AllRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.LeTet)</strong>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div>
+            <span>NGHỈ PHÉP TRANH THỦ</span>
+            <strong>@AllRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.TranhThu)</strong>
+        </div>
+    </div>
+</div>
+
+<section class="panel list-panel">
+    <div class="panel-head">
+        <div>
+            <h1>KHO LƯU TRỮ DANH SÁCH NGHỈ CỦA HỌC VIÊN 
+            </h1>
+            
+        </div>
+    </div>
+
+    <div class="filters">
+        <div class="field wide">
+            <label>Tìm kiếm học viên / địa chỉ / lý do</label>
+            <input @bind="keyword" @bind:event="oninput" placeholder="Nhập tên học viên, mã HV, loại nghỉ hoặc môn học..." />
+        </div>
+        <div class="field">
+            <label>Lọc theo Lớp</label>
+            <select @bind="filterClass">
+                <option value="">Tất cả các lớp (@Classes.Count lớp)</option>
+                @foreach (var c in Classes)
+                {
+                    <option value="@c">Lớp @c</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label>Loại nghỉ phép (Tag)</label>
+            <select @bind="filterCategory">
+                <option value="">Tất cả các loại phép</option>
+                <option value="@LeaveCategories.CuoiTuan">Nghỉ phép cuối tuần</option>
+                <option value="@LeaveCategories.LeTet">Nghỉ Lễ / Tết</option>
+                <option value="@LeaveCategories.TranhThu">Nghỉ phép tranh thủ</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Lọc theo tháng</label>
+            <select @bind="phongFilterMonth">
+                <option value="0">Tất cả các tháng</option>
+                @for (int m = 1; m <= 12; m++)
+                {
+                    <option value="@m">Tháng @m</option>
+                }
+            </select>
+        </div>
+        <div class="field"><label>Năm</label><input type="number" min="2000" max="2200" @bind="filterYear" /></div>
+        <div class="filter-buttons">
+            <button class="btn outline" @onclick="ResetFilters"> Đặt lại</button>
+        </div>
+    </div>
+    <LeaveDataTable Items="@PhongFilteredRecords" OnChanged="@OnChanged" />
+</section>
+
+@code {
+    [Parameter, EditorRequired] public List<LeaveRequest> AllRecords { get; set; } = new();
+    [Parameter, EditorRequired] public List<string> Classes { get; set; } = new();
+
+    [Parameter] public EventCallback<List<LeaveRequest>> OnExport {get;set;}
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private string keyword = "";
+    private string filterClass = "";
+    private string filterCategory = "";
+    private int phongFilterMonth = 0;
+    private int filterYear = DateTime.Today.Year;
+
+    public List<LeaveRequest> PhongFilteredRecords => AllRecords
+        .Where(x => string.IsNullOrWhiteSpace(keyword)
+            || x.HoTen.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.MaHocVien.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.TagLoaiNghi.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.HienThiMonHoc.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.DiaChiNoiNghi.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.LyDo.Contains(keyword.Trim(), StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrEmpty(filterClass) || x.Lop.Equals(filterClass, StringComparison.OrdinalIgnoreCase))
+        .Where(x => string.IsNullOrEmpty(filterCategory) || x.PhanLoaiNghi == filterCategory)
+        .Where(x => phongFilterMonth == 0 || (filterYear>=2000 && filterYear<=2200 && x.TuThoiDiem<new DateTime(filterYear,phongFilterMonth,1).AddMonths(1) && x.DenThoiDiem>new DateTime(filterYear,phongFilterMonth,1)))
+        .OrderByDescending(x => x.TuThoiDiem)
+        .ToList();
+
+    private void ResetFilters()
+    {
+        keyword = "";
+        filterClass = "";
+        filterCategory = "";
+        phongFilterMonth = 0;
+        filterYear = DateTime.Today.Year;
+    }
+}

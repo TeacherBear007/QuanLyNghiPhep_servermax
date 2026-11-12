@@ -1,0 +1,206 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<div class="dash">
+    <div class="dash-kpis">
+        <Kpi Label="Tổng lượt nghỉ" Value="@OverviewFilteredRecords.Count.ToString()" Sub="@("Lớp " + SelectedClass)" />
+        <Kpi Label="Nghỉ cuối tuần" Value="@OverviewCountCuoiTuan.ToString()" Sub="@((Pct(OverviewCountCuoiTuan)) + "% tổng lượt")" />
+        <Kpi Label="Nghỉ lễ / Tết" Value="@OverviewCountLeTet.ToString()" Sub="@((Pct(OverviewCountLeTet)) + "% tổng lượt")" />
+        <Kpi Label="Nghỉ tranh thủ" Value="@OverviewCountTranhThu.ToString()" Sub="@((Pct(OverviewCountTranhThu)) + "% tổng lượt")" />
+        <Kpi Label="Học viên đã nghỉ" Value="@(StudentsLeft + "/" + ClassStudents.Count)" Sub="@((ClassStudents.Count == 0 ? 0 : (int)Math.Round(100.0 * StudentsLeft / ClassStudents.Count)) + "% quân số")" />
+        <Kpi Label="Chờ duyệt" Value="@PendingCount.ToString()" Sub="Chờ Phòng QLHV" />
+    </div>
+    <div class="dash-row two">
+        <div class="dash-card"><h3>Phân bố theo loại phép</h3><Donut Items="@TypeSlices" CenterLabel="lượt nghỉ" /></div>
+        <div class="dash-card"><h3>Lượt nghỉ theo tháng</h3><div class="sub">Năm @DateTime.Today.Year</div><ColumnChart Items="@Months" Color="@ChartColors.Brand" /></div>
+    </div>
+    <div class="dash-row three">
+        <div class="dash-card"><h3>Học viên nghỉ nhiều nhất</h3><RankList Items="@TopStudents" /></div>
+        <div class="dash-card"><h3>Môn học nghỉ tranh thủ</h3><RankList Items="@SubjectRank" Color="@ChartColors.Tranh" /></div>
+        <div class="dash-card"><h3>Trạng thái đơn</h3><StackBar Items="@StatusSlices" /></div>
+    </div>
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Thống kê &amp; Tìm kiếm danh sách học viên nghỉ (Lớp @SelectedClass)</h2>
+        </div>
+        <span class="total-label">@OverviewFilteredRecords.Count kết quả</span>
+    </div>
+
+    <div class="filters">
+        <div class="field wide">
+            <label>Tìm kiếm theo tên học viên</label>
+            <input @bind="overviewSearchName" @bind:event="oninput" placeholder="Nhập họ tên hoặc mã học viên..." />
+        </div>
+        <div class="field">
+            <label>Loại phép</label>
+            <select @bind="overviewCategory">
+                <option value="">Tất cả</option>
+                <option value="@LeaveCategories.CuoiTuan">Nghỉ cuối tuần</option>
+                <option value="@LeaveCategories.LeTet">Nghỉ lễ / Tết</option>
+                <option value="@LeaveCategories.TranhThu">Nghỉ tranh thủ</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Trạng thái</label>
+            <select @bind="overviewStatus">
+                <option value="">Tất cả</option>
+                <option value="@LeaveStatuses.WaitingPhong">@LeaveStatuses.WaitingPhong</option>
+                <option value="@LeaveStatuses.Approved">@LeaveStatuses.Approved</option>
+                <option value="@LeaveStatuses.Rejected">@LeaveStatuses.Rejected</option>
+                <option value="@LeaveStatuses.Cancelled">@LeaveStatuses.Cancelled</option>
+            </select>
+        </div>
+        <div class="field">
+            <label>Chế độ lọc ngày tháng</label>
+            <select @bind="overviewDateMode">
+                <option value="all">Tất cả thời gian</option>
+                <option value="month">Theo tháng (từ ngày 1 đến cuối tháng)</option>
+                <option value="day">Theo ngày cụ thể</option>
+                <option value="range">Từ ngày ... đến ngày ...</option>
+            </select>
+        </div>
+
+        @if (overviewDateMode == "month")
+        {
+            <div class="field">
+                <label>Chọn tháng</label>
+                <select @bind="overviewMonth">
+                    @for (int m = 1; m <= 12; m++)
+                    {
+                        <option value="@m">Tháng @m</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label>Chọn năm</label>
+                <select @bind="overviewYear">
+                    <option value="2025">Năm 2025</option>
+                    <option value="2026">Năm 2026</option>
+                    <option value="2027">Năm 2027</option>
+                </select>
+            </div>
+        }
+        else if (overviewDateMode == "day")
+        {
+            <div class="field">
+                <label>Chọn ngày cụ thể</label>
+                <input type="date" @bind="overviewSpecificDate" @bind:format="yyyy-MM-dd" />
+            </div>
+        }
+        else if (overviewDateMode == "range")
+        {
+            <div class="field">
+                <label>Từ ngày</label>
+                <input type="date" @bind="overviewFromDate" @bind:format="yyyy-MM-dd" />
+            </div>
+            <div class="field">
+                <label>Đến ngày</label>
+                <input type="date" @bind="overviewToDate" @bind:format="yyyy-MM-dd" />
+            </div>
+        }
+
+        <div class="filter-buttons">
+            <button class="btn outline" @onclick="ResetOverviewFilters"> Đặt lại</button>
+        </div>
+    </div>
+
+    <RecentLeaveTable Items="@OverviewFilteredRecords" ShowFilters="false" />
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<Student> ClassStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> ClassRecords { get; set; } = new();
+
+    private IEnumerable<LeaveRequest> Active => OverviewFilteredRecords.Where(x => x.TrangThai != LeaveStatuses.Rejected && x.TrangThai != LeaveStatuses.Cancelled);
+    private int Pct(int v) => OverviewFilteredRecords.Count == 0 ? 0 : (int)Math.Round(100.0 * v / OverviewFilteredRecords.Count);
+    private int StudentsLeft => Active.Select(x => x.MaHocVien).Distinct().Count();
+    private int PendingCount => OverviewFilteredRecords.Count(x => x.TrangThai == LeaveStatuses.WaitingPhong);
+    private List<Slice> TypeSlices => new()
+    {
+        new("Nghỉ cuối tuần", OverviewCountCuoiTuan, ChartColors.Weekend),
+        new("Nghỉ lễ / Tết", OverviewCountLeTet, ChartColors.Holiday),
+        new("Nghỉ tranh thủ", OverviewCountTranhThu, ChartColors.Tranh),
+    };
+    private List<ChartPoint> Months => Enumerable.Range(1, 12).Select(m => new ChartPoint("T" + m, Active.Count(x => x.TuThoiDiem.Year == DateTime.Today.Year && x.TuThoiDiem.Month == m))).ToList();
+    private List<RankItem> TopStudents => Active.GroupBy(x => x.MaHocVien).Select(g => new RankItem(g.First().HoTen, g.Count(), g.Key)).OrderByDescending(x => x.Value).Take(8).ToList();
+    private List<RankItem> SubjectRank => Active.Where(x => x.PhanLoaiNghi == LeaveCategories.TranhThu).GroupBy(x => x.HienThiMonHoc).Select(g => new RankItem(g.Key, g.Count())).OrderByDescending(x => x.Value).Take(6).ToList();
+    private List<Slice> StatusSlices => new()
+    {
+        new(LeaveStatuses.Approved, OverviewFilteredRecords.Count(x => x.TrangThai == LeaveStatuses.Approved), ChartColors.Ok),
+        new(LeaveStatuses.WaitingPhong, PendingCount, ChartColors.Wait),
+        new(LeaveStatuses.Rejected, OverviewFilteredRecords.Count(x => x.TrangThai == LeaveStatuses.Rejected), ChartColors.Bad),
+        new(LeaveStatuses.Cancelled, OverviewFilteredRecords.Count(x => x.TrangThai == LeaveStatuses.Cancelled), ChartColors.Cancel),
+    };
+    private string overviewSearchName = "";
+    private string overviewCategory = "";
+    private string overviewStatus = "";
+    private string overviewDateMode = "all";
+    private int overviewMonth = 11;
+    private int overviewYear = 2026;
+    private DateTime overviewSpecificDate = new(2026, 11, 6);
+    private DateTime overviewFromDate = new(2026, 11, 1);
+    private DateTime overviewToDate = new(2026, 11, 30);
+
+    private List<LeaveRequest> OverviewFilteredRecords
+    {
+        get
+        {
+            var query = ClassRecords.AsEnumerable();
+            if (!string.IsNullOrEmpty(overviewCategory)) query = query.Where(x => x.PhanLoaiNghi == overviewCategory);
+            if (!string.IsNullOrEmpty(overviewStatus)) query = query.Where(x => x.TrangThai == overviewStatus);
+            if (!string.IsNullOrWhiteSpace(overviewSearchName))
+            {
+                string kw = overviewSearchName.Trim();
+                query = query.Where(x => x.HoTen.Contains(kw, StringComparison.OrdinalIgnoreCase)
+                                      || x.MaHocVien.Contains(kw, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (overviewDateMode == "month")
+            {
+                var firstDay = new DateTime(overviewYear, overviewMonth, 1);
+                var lastDay = firstDay.AddMonths(1).AddTicks(-1);
+                query = query.Where(x => x.TuThoiDiem <= lastDay && x.DenThoiDiem >= firstDay)
+                             .OrderBy(x => x.TuThoiDiem);
+            }
+            else if (overviewDateMode == "day")
+            {
+                var dayStart = overviewSpecificDate.Date;
+                var dayEnd = dayStart.AddDays(1).AddTicks(-1);
+                query = query.Where(x => x.TuThoiDiem <= dayEnd && x.DenThoiDiem >= dayStart)
+                             .OrderBy(x => x.TuThoiDiem);
+            }
+            else if (overviewDateMode == "range")
+            {
+                var start = overviewFromDate.Date;
+                var end = overviewToDate.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(x => x.TuThoiDiem <= end && x.DenThoiDiem >= start)
+                             .OrderBy(x => x.TuThoiDiem);
+            }
+            else
+            {
+                query = query.OrderByDescending(x => x.TuThoiDiem);
+            }
+
+            return query.ToList();
+        }
+    }
+
+    private int OverviewCountCuoiTuan => OverviewFilteredRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.CuoiTuan);
+    private int OverviewCountLeTet => OverviewFilteredRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.LeTet);
+    private int OverviewCountTranhThu => OverviewFilteredRecords.Count(x => x.PhanLoaiNghi == LeaveCategories.TranhThu);
+    private int OverviewPercent(int c) => OverviewFilteredRecords.Count == 0 ? 0 : (int)Math.Round(100.0 * c / OverviewFilteredRecords.Count);
+
+    private void ResetOverviewFilters()
+    {
+        overviewSearchName = "";
+        overviewCategory = "";
+        overviewStatus = "";
+        overviewDateMode = "all";
+        overviewMonth = 11;
+        overviewYear = 2026;
+    }
+}

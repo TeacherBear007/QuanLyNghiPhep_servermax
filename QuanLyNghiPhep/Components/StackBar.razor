@@ -1,0 +1,20 @@
+@{ var total = Items.Sum(x => x.Value); }
+@if (total == 0)
+{
+    <p class="muted">Chưa có dữ liệu.</p>
+}
+else
+{
+    <div class="sb">
+        @foreach (var s in Items.Where(x => x.Value > 0)) { <div style="flex:@s.Value;background:@s.Color" title="@s.Label: @s.Value"></div> }
+    </div>
+    <div class="sb-legend">
+        @foreach (var s in Items)
+        {
+            <div><i style="background:@s.Color"></i><span>@s.Label</span><b>@s.Value</b><em>@((int)Math.Round(100.0 * s.Value / total))%</em></div>
+        }
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public List<Slice> Items { get; set; } = new();
+}

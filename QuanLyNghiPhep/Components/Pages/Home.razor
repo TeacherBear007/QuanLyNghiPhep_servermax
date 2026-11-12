@@ -1,0 +1,499 @@
+@page "/"
+@inject AppSession Session
+@implements IDisposable
+@inject Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider AuthenticationState
+@inject NavigationManager Navigation
+@inject ILogger<Home> Logger
+@inject LeaveRepository Repository
+@inject IJSRuntime JS
+
+<PageTitle>Quản lý học viên nghỉ phép | Học viện An ninh nhân dân</PageTitle>
+
+@if (!Session.IsAuthenticated)
+{
+    <div class="login-screen">
+        <form id="login-form" class="login-card" method="post" action="account/login" data-enhance="false" autocomplete="off">
+            <AntiforgeryToken />
+            <div class="login-card-icon">
+                <img src="image/logo_hoc_vien.png" alt="Logo Học viện An ninh nhân dân" />
+            </div>
+            <div class="login-brand">
+                <div class="login-academy">HỌC VIỆN AN NINH NHÂN DÂN</div>
+                <div class="login-academy-en">PEOPLE'S SECURITY ACADEMY (PSA)</div>
+            </div>
+            <h2>HỆ THỐNG QUẢN LÝ HỌC VIÊN NGHỈ PHÉP</h2>
+            <div class="login-input">
+                <label class="login-input-icon" for="username" aria-label="Tên đăng nhập">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" /></svg>
+                </label>
+                <input id="username" name="username" required maxlength="256" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Tên đăng nhập" placeholder="Tên đăng nhập" />
+            </div>
+            <div class="login-input password-input">
+                <label class="login-input-icon" for="password" aria-label="Mật khẩu">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM9 6c0-1.66 1.34-3 3-3s3 1.34 3 3v2H9V6zm9 14H6V10h12v10zm-6-3c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2z" /></svg>
+                </label>
+                <input id="password" name="password" required maxlength="256" type="password" autocomplete="new-password" aria-label="Mật khẩu" placeholder="Mật khẩu" />
+                <button type="button" class="password-eye" aria-label="Hiện mật khẩu" title="Hiện mật khẩu" aria-pressed="false" onclick="leaveApp.togglePassword(this)"><Icon Name="eye" /></button>
+            </div>
+            <div id="login-client-error" class="alert error" role="alert" hidden></div>
+            @if (!string.IsNullOrEmpty(loginError))
+            {
+                <div class="alert error" role="alert">@loginError</div>
+            }
+            @if (PasswordChangedCode == "1")
+            {
+                <div class="alert success">Đã đổi mật khẩu. Vui lòng đăng nhập bằng mật khẩu mới.</div>
+            }
+            <button class="btn primary login-submit" type="submit">Đăng nhập</button>
+            <div class="login-footer">Hệ thống Quản lý học viên</div>
+        </form>
+    </div>
+}
+else
+{
+    <form id="logout-form" method="post" action="account/logout" hidden><AntiforgeryToken /></form>
+    @if (sessionLeft is { } left && left.TotalMinutes <= 5)
+    {
+        <div class="alert error" style="margin:0;display:flex;gap:12px;align-items:center;justify-content:center">
+            Phiên đăng nhập còn @Math.Max(0, (int)Math.Ceiling(left.TotalMinutes)) phút. Hãy lưu công việc đang làm.
+            <form method="post" action="account/renew" data-enhance="false"><AntiforgeryToken /><button class="btn primary" type="submit">Gia hạn phiên</button></form>
+        </div>
+    }
+    <div class="main-app">
+        <header class="academy-banner">
+            <div class="academy-brand">
+                <img src="/image/logo_hoc_vien.png" alt="Logo Học viện An ninh nhân dân" />
+                <div class="academy-banner-text">
+                    <h1>HỌC VIỆN AN NINH NHÂN DÂN</h1>
+                    <div class="academy-subtitle">
+                        <span>HỆ THỐNG QUẢN LÝ &amp; LƯU TRỮ DỮ LIỆU HỌC VIÊN NGHỈ PHÉP</span>
+                        <span class="academy-demo">@Session.RoleDisplay.ToUpperInvariant()</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="academy-banner-actions">
+                @if (Session.Role == UserRole.TrungDoi && trungDoiView == "workspace")
+                {
+                    <button type="button" class="banner-switch-class" @onclick="BackToClassSelect"><Icon Name="repeat" />Đổi lớp (@selectedClass)
+                    </button>
+                }
+            </div>
+        </header>
+
+        @* ==================== PHÂN QUYỀN 1: CHỦ NHIỆM LỚP ==================== *@
+        @if (Session.Role == UserRole.TrungDoi)
+        {
+            <CanBoTrungDoi TrungDoiView="@trungDoiView"
+                           SelectedClass="@selectedClass"
+                           ClassGroups="@classGroups"
+                           AllStudents="@students"
+                           AllRecords="@allRecords"
+                           Notice="@notice"
+                           PageError="@pageError"
+                           OnEnterClass="EnterClassWorkspace"
+                           OnDataChanged="Reload"
+                           OnExportExcel="ExportExcel"
+                           OnNotice="val => notice = val"
+                           OnError="val => pageError = val" />
+        }
+
+        @* ==================== PHÂN QUYỀN 2: PHÒNG QUẢN LÝ HỌC VIÊN ==================== *@
+        else if (Session.Role == UserRole.PhongQLHV)
+        {
+            <PhongQuanLyHocVien ClassGroups="@classGroups"
+                                AllStudents="@students"
+                                AllRecords="@allRecords"
+                                Notice="@notice"
+                                PageError="@pageError"
+                                OnDataChanged="Reload"
+                                OnExportExcel="ExportExcel"
+                                OnNotice="val => notice = val"
+                                OnError="val => pageError = val" />
+        }
+
+        @* ==================== PHÂN QUYỀN 3: GIÁO VIÊN BỘ MÔN ==================== *@
+        else if (Session.Role == UserRole.BoMon)
+        {
+            <GiaoVienBoMon ClassGroups="@classGroups"
+                           AllRecords="@allRecords" />
+        }
+
+        @* ==================== PHÂN QUYỀN 4: QUẢN TRỊ VIÊN (ADMIN) ==================== *@
+        @if (Session.Role == UserRole.Admin)
+        {
+            <div class="shell @(adminMenuCollapsed ? "menu-collapsed" : "")">
+                <aside class="sidebar">
+                    <nav class="menu">
+                        <div class="menu-caption">QUẢN TRỊ HỆ THỐNG</div>
+
+                        <button type="button"
+                                class="nav-link @(adminTab == "accounts" ? "active" : "")"
+                                @onclick='() => adminTab = "accounts"'>
+                            <Icon Name="users" />Quản lý tài khoản
+                        </button>
+
+                        <button type="button"
+                                class="nav-link @(adminTab == "create" ? "active" : "")"
+                                @onclick='() => adminTab = "create"'>
+                            <Icon Name="plus" />Tạo tài khoản mới
+                        </button>
+                        <button type="button" class="nav-link @(adminTab == "audit" ? "active" : "")" @onclick='() => adminTab = "audit"'>
+                            <Icon Name="history" />Nhật ký hệ thống
+                        </button>
+                        <button type="button" class="nav-link @(adminTab == "backup" ? "active" : "")" @onclick='() => adminTab = "backup"'>
+                            <Icon Name="database" />Sao lưu &amp; khôi phục
+                        </button>
+                    </nav>
+
+                    <AccountMenu />
+            <div class="sidebar-bottom">
+                        <div class="sidebar-person">A</div>
+                        <div>
+                            <strong>@Session.UserName</strong>
+                            <small>Quản trị viên</small>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="workspace">
+                    <header class="topbar">
+                        <div class="topbar-left">
+                            <button type="button"
+                                    class="toolbar-button"
+                                    title="Ẩn / hiện thanh menu"
+                                    @onclick="() => adminMenuCollapsed = !adminMenuCollapsed">
+                                ☰
+                            </button>
+
+                            <div class="topbar-path">
+                                Quản trị viên <b>/</b>
+                                <span>
+                                    @(adminTab == "accounts" ? "Quản lý tài khoản" : adminTab == "create" ? "Tạo tài khoản mới" : adminTab == "audit" ? "Nhật ký hệ thống" : "Sao lưu & khôi phục")
+                        </span>
+                    </div>
+                </div>
+
+                        <div class="header-right">
+                            <span class="date-chip">
+                                Hôm nay: @DateTime.Today.ToString("dd/MM/yyyy")
+                            </span>
+                        </div>
+                    </header>
+
+                    @if (adminTab == "audit") { <main class="content"><NhatKy /></main> }
+                    else if (adminTab == "backup") { <main class="content"><SaoLuu /></main> }
+                    else { <Admin View="@adminTab" /> }
+                </div>
+            </div>
+        }
+
+        @* ==================== FOOTER HỌC VIỆN AN NINH NHÂN DÂN ==================== *@
+        <footer class="psa-footer">
+            <div class="psa-footer-inner">
+                <div class="psa-footer-logo">
+                    <img src="/image/logo_hoc_vien.png" alt="Logo Học viện An ninh nhân dân" />
+                </div>
+                <h2 class="psa-footer-title">HỌC VIỆN AN NINH NHÂN DÂN</h2>
+
+                <div class="psa-footer-address">
+                    <span> 125 Trần Phú, Hà Đông, Hà Nội</span>
+                </div>
+
+                <div class="psa-footer-contacts">
+                    <span> 0692 215 777</span>
+                    <span> hvannd@mps.gov.vn</span>
+                    <span> https://hvannd.edu.vn/</span>
+                </div>
+
+                <div class="psa-footer-divider"></div>
+
+                <div class="psa-footer-bottom">
+                    <span class="psa-copyright">© Copyright 2026 by Học viện An ninh nhân dân</span>
+                    <div class="psa-socials">
+                        <span class="social-circle" title="Facebook">f</span>
+                        <span class="social-circle zalo-circle" title="Zalo">Zalo</span>
+                        <span class="social-circle" title="YouTube">▶</span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    @if (activeAccountWindow == AccountWindow.Profile)
+    {
+        <div class="overlay" @onclick="CloseAccountWindow">
+            <div class="account-window" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+                <div class="account-window-header">
+                    <h2>THÔNG TIN TÀI KHOẢN</h2>
+                    <button @onclick="CloseAccountWindow">×</button>
+                </div>
+                <div class="account-window-body">
+                    @if (loadingAccountInfo)
+                    {
+                        <p>Đang tải thông tin...</p>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(accountInfoError))
+                    {
+                        <p class="alert error">@accountInfoError</p>
+                    }
+                    else if (accountInfo is not null)
+                    {
+                        <div class="account-info-row">
+                            <span>Tên đăng nhập</span>
+                            <strong>@Session.UserName</strong>
+                        </div>
+
+                        <div class="account-info-row">
+                            <span>Họ và tên</span>
+                            <strong>@(string.IsNullOrWhiteSpace(accountInfo.FullName)
+                                                    ? "Chưa cập nhật"
+                                                    : accountInfo.FullName)
+                                                                       </strong>
+                                                                   </div>
+
+                        <div class="account-info-row">
+                            <span>Ngày sinh</span>
+                            <strong>@(accountInfo.DateOfBirth?.ToString("dd/MM/yyyy")
+                                                    ?? "Chưa cập nhật")
+                                                                   </strong>
+                                                               </div>
+
+                        <div class="account-info-row">
+                            <span>Giới tính</span>
+                            <strong>@(string.IsNullOrWhiteSpace(accountInfo.Gender)
+                                                    ? "Chưa cập nhật"
+                                                    : accountInfo.Gender)
+                                                                     </strong>
+                                                                 </div>
+
+                        <div class="account-info-row">
+                            <span>Số điện thoại</span>
+                            <strong>@(string.IsNullOrWhiteSpace(accountInfo.PhoneNumber)
+                                                    ? "Chưa cập nhật"
+                                                    : accountInfo.PhoneNumber)
+                                                                          </strong>
+                                                                      </div>
+
+                        <div class="account-info-row">
+                            <span>Số hiệu CAND</span>
+                            <strong>@(string.IsNullOrWhiteSpace(accountInfo.MajorCode)
+                                                    ? "Chưa cập nhật"
+                                                    : accountInfo.MajorCode)
+                </strong>
+            </div>
+
+                        <div class="account-info-row">
+                            <span>Vai trò</span>
+                            <strong>@Session.RoleDisplay</strong>
+                        </div>
+
+                        <div class="account-info-row">
+                            <span>Trạng thái</span>
+                            <strong class="account-active">Đang hoạt động</strong>
+                        </div>
+                        }
+                </div>
+                <div class="account-window-footer">
+                    <button class="btn primary" @onclick="CloseAccountWindow">Đóng</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    else if (activeAccountWindow == AccountWindow.Security)
+    {
+        <div class="overlay" @onclick="CloseAccountWindow">
+            <div class="account-window" role="dialog" aria-modal="true" @onclick:stopPropagation="true">
+                <div class="account-window-header">
+                    <h2>BẢO MẬT HỆ THỐNG</h2>
+                    <button @onclick="CloseAccountWindow">×</button>
+                </div>
+                <div class="account-window-body">
+                    <div class="account-info-row"><span>Xác thực tài khoản</span><strong>ASP.NET Core Identity (SQLite)</strong></div>
+                    <div class="account-info-row"><span>Đồng bộ phân quyền</span><strong>Tự động liên kết dữ liệu lớp, học viên &amp; đơn nghỉ phép</strong></div>
+                    <div class="account-info-row"><span>Quản lý mật khẩu</span><strong>Admin cấp/reset mật khẩu; mọi tài khoản được tự đổi mật khẩu</strong></div>
+                </div>
+                <div class="account-window-footer">
+                    <button class="btn primary" @onclick="CloseAccountWindow">Đóng</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private TimeSpan? sessionLeft;
+    private System.Threading.Timer? sessionTimer;
+    private string loginError = "";
+    private string notice = "";
+    private string pageError = "";
+    private enum AccountWindow { None, Profile, Security }
+    private AccountWindow activeAccountWindow;
+
+    private List<ClassGroup> classGroups = new();
+    private List<Student> students = new();
+    private List<LeaveRequest> allRecords = new();
+
+    private string trungDoiView = "select-class";
+    private string selectedClass = "B10D57";
+    private string adminTab = "accounts";
+    private bool adminMenuCollapsed;
+
+    [SupplyParameterFromQuery(Name = "loginError")] public string? LoginErrorCode { get; set; }
+    [SupplyParameterFromQuery(Name = "passwordChanged")] public string? PasswordChangedCode { get; set; }
+
+    private AccountProfile? accountInfo;
+    private bool loadingAccountInfo;
+    private string accountInfoError = "";
+
+    private async Task OpenAccountWindow()
+    {
+        if (loadingAccountInfo)
+            return;
+
+        loadingAccountInfo = true;
+        accountInfo = null;
+        accountInfoError = "";
+        activeAccountWindow = AccountWindow.Profile;
+        StateHasChanged();
+
+        try
+        {
+            accountInfo = await Session.GetAccountInfoAsync();
+        }
+        catch (Exception ex)
+        {
+            accountInfoError = ErrorMessage(ex);
+        }
+        finally
+        {
+            loadingAccountInfo = false;
+            StateHasChanged();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthenticationState.AuthenticationStateChanged += AuthenticationChanged;
+        Session.AccountRequested += OnAccountRequested;
+        Session.SecurityRequested += OnSecurityRequested;
+        try
+        {
+            await Session.InitializeAsync();
+            if (Session.IsAuthenticated)
+            {
+                Reload();
+                if (classGroups.Count > 0 && !classGroups.Any(x => x.TenLop.Equals(selectedClass, StringComparison.OrdinalIgnoreCase)))
+                    selectedClass = classGroups[0].TenLop;
+                if (Session.Role == UserRole.TrungDoi)
+                {
+                    var lop = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query).TryGetValue("lop", out var v) ? v.ToString() : "";
+                    var match = classGroups.FirstOrDefault(x => x.TenLop.Equals(lop, StringComparison.OrdinalIgnoreCase));
+                    if (match is not null) { selectedClass = match.TenLop; trungDoiView = "workspace"; }
+                }
+            }
+        }
+        catch (UserAccessException)
+        {
+            loginError = "Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.";
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (LoginErrorCode is not null)
+            loginError = "Không thể đăng nhập. Kiểm tra lại tên tài khoản và mật khẩu.";
+    }
+
+    private void AuthenticationChanged(Task<Microsoft.AspNetCore.Components.Authorization.AuthenticationState> state)
+        => _ = InvokeAsync(() => Navigation.NavigateTo("/", forceLoad: true));
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && Session.IsAuthenticated)
+            sessionTimer = new System.Threading.Timer(_ => _ = InvokeAsync(() =>
+            {
+                var left = Session.ExpiresAt - DateTimeOffset.UtcNow;
+                if (left?.TotalMinutes <= 5 != sessionLeft?.TotalMinutes <= 5 || left?.TotalMinutes <= 5) { sessionLeft = left; StateHasChanged(); }
+            }), null, TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(20));
+    }
+
+    private void OnAccountRequested() => _ = InvokeAsync(OpenAccountWindow);
+    private void OnSecurityRequested() => _ = InvokeAsync(() =>
+    {
+        activeAccountWindow = AccountWindow.Security;
+        StateHasChanged();
+    });
+
+    private void CloseAccountWindow() => activeAccountWindow = AccountWindow.None;
+    public void Dispose()
+    {
+        AuthenticationState.AuthenticationStateChanged -= AuthenticationChanged;
+        Session.AccountRequested -= OnAccountRequested;
+        Session.SecurityRequested -= OnSecurityRequested;
+        sessionTimer?.Dispose();
+    }
+
+    private async Task Logout() => await JS.InvokeVoidAsync("leaveApp.submitLogout");
+
+    private string ErrorMessage(Exception exception)
+    {
+        if (exception is UserAccessException or ArgumentException or BusinessRuleException or InvalidDataException)
+            return exception.Message;
+        Logger.LogError(exception, "Thao tác quản lý nghỉ phép thất bại");
+        return "Không thể hoàn tất thao tác. Vui lòng kiểm tra lại dữ liệu nhập.";
+    }
+
+    private void Reload()
+    {
+        try
+        {
+            classGroups = Repository.GetClasses(Session);
+            students = Repository.GetStudents(Session, includeInactive: Session.Role is UserRole.PhongQLHV or UserRole.Admin);
+            allRecords = Repository.GetRequests(Session);
+            pageError = "";
+        }
+        catch (Exception ex)
+        {
+            pageError = ErrorMessage(ex);
+        }
+    }
+
+    private void EnterClassWorkspace(string className)
+    {
+        selectedClass = className;
+        trungDoiView = "workspace";
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("lop", className));
+        notice = "";
+        pageError = "";
+        Reload();
+    }
+
+    private void BackToClassSelect()
+    {
+        trungDoiView = "select-class";
+        pageError = "";
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters(new Dictionary<string, object?> { ["lop"] = null, ["tab"] = null }));
+        Reload();
+    }
+
+    private async Task ExportExcel()
+    {
+        try
+        {
+            var rows = Session.Role == UserRole.PhongQLHV
+                ? allRecords
+                : allRecords.Where(x => x.Lop.Equals(selectedClass, StringComparison.OrdinalIgnoreCase)).ToList();
+            var bytes = Repository.ExportExcel(Session, rows);
+            string name = $"DuLieuNghiPhep_{DateTime.Now:yyyyMMdd_HHmm}.xlsx";
+            await JS.InvokeVoidAsync("leaveApp.downloadBase64", name, Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+            notice = $"Đã xuất file Excel ({rows.Count} bản ghi).";
+        }
+        catch (Exception ex)
+        {
+            pageError = ErrorMessage(ex);
+        }
+    }
+}

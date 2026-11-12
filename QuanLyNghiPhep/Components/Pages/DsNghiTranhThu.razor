@@ -1,0 +1,224 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Danh sách đơn nghỉ phép tranh thủ (Lớp @SelectedClass)</h2>
+        </div>
+        
+    </div>
+    <RecentLeaveTable Items="@TranhThuClassRecords" OnChanged="@OnDataChanged"><Toolbar><button class="btn primary" @onclick="OpenForm"> <Icon Name="plus" />Tạo đơn nghỉ tranh thủ</button></Toolbar></RecentLeaveTable>
+</section>
+@if (showForm)
+{
+    <div class="overlay">
+        <div class="modal-box wide" @onclick:stopPropagation="true">
+<section class="panel form-panel">
+    <div class="panel-head"><h2> Tạo đơn nghỉ phép tranh thủ — Lớp @SelectedClass</h2><button type="button" class="btn outline" @onclick="CloseForm"> Đóng</button></div>
+    <div class="form-body">
+        <div class="form-grid">
+            <div class="field">
+                <label>Tên học viên xin nghỉ <em>*</em></label>
+                <select @bind="SelectedTranhThuStudent">
+                    <option value="">-- Chọn học viên theo mã --</option>
+                    @foreach (var hv in ClassStudents)
+                    {
+                        <option value="@hv.MaHocVien">@hv.MaHocVien — @hv.HoTen</option>
+                    }
+                </select>
+                @if (QuotaWarning is { } quotaText)
+                {
+                    <div class="alert error" style="margin-top:6px"> @quotaText</div>
+                }
+                <datalist id="datalist-class-students">
+                    @foreach (var s in ClassStudents)
+                    {
+                        <option value="@s.HoTen">@s.MaHocVien - @s.NgaySinh</option>
+                    }
+                </datalist>
+            </div>
+
+            <div class="field">
+                <label>Lớp</label>
+                <input value="@SelectedClass" disabled />
+            </div>
+
+            <div class="field">
+                <label>Thời gian bắt đầu xin nghỉ <em>*</em></label>
+                <div class="date-time-pair">
+                    <input type="date" @bind="TranhThuStartDate" @bind:format="yyyy-MM-dd" />
+                    <input type="time" value="@TranhThuStartTime" @onchange="e => TranhThuStartTime = e.Value?.ToString() ?? string.Empty" />
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Thời gian kết thúc xin nghỉ <em>*</em></label>
+                <div class="date-time-pair">
+                    <input type="date" @bind="TranhThuEndDate" @bind:format="yyyy-MM-dd" />
+                    <input type="time" value="@TranhThuEndTime" @onchange="e => TranhThuEndTime = e.Value?.ToString() ?? string.Empty" />
+                </div>
+            </div>
+
+            <div class="field span-2">
+                <label>Môn học nghỉ</label>
+
+                <select class="form-control @(formError.Contains("môn") ? "invalid" : "")"
+                        @bind="selectedSubjectId">
+                    <option value="">-- Chọn môn học --</option>
+
+                    @foreach (var subject in classSubjects)
+                    {
+                        <option value="@subject.Id.ToString()">
+                            @subject.Code — @subject.Name — @subject.Faculty
+                        </option>
+                    }
+                </select>
+
+                @if (classSubjects.Count == 0)
+                {
+                    <small>
+                        Lớp chưa có môn học. Vào mục Môn học của lớp để thêm.
+                    </small>
+                }
+            </div>
+
+            <div class="field span-2">
+                <label>Lý do xin nghỉ <em>*</em></label>
+                <textarea rows="2" @bind="tranhThuInput.LyDo" placeholder="Nhập lý do xin nghỉ phép tranh thủ (từ đơn nghỉ phép giấy)..."></textarea>
+            </div>
+
+            <div class="field span-2">
+                <label>Địa chỉ nơi nghỉ</label>
+                <input @bind="tranhThuInput.DiaChiNoiNghi" placeholder="Nhập địa chỉ nơi nghỉ..." />
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(formError)) { <div class="alert error form-error" role="alert"> @formError</div> }
+        <div class="form-footer">
+            <div>
+                <button class="btn outline" @onclick="ResetTranhThuForm"> Làm mới ô nhập</button>
+                <button class="btn primary" @onclick="SubmitAndApproveTranhThu"> Gửi Phòng QLHV duyệt</button>
+            </div>
+        </div>
+    </div>
+</section>
+        </div>
+    </div>
+}
+
+
+@code {
+    private bool showForm;
+    private async Task OpenForm() { await ResetTranhThuForm(); showForm = true; }
+    private void CloseForm() { showForm = false; formError = ""; }
+    private string formError = "";
+    private string? QuotaWarning
+    {
+        get
+        {
+            var limit = LeaveCategories.TranhThuMonthlyLimit;
+            if (limit <= 0 || string.IsNullOrWhiteSpace(tranhThuInput.MaHocVien)) return null;
+            var month = tranhThuInput.TuThoiDiem;
+            var used = TranhThuClassRecords.Count(x => x.MaHocVien == tranhThuInput.MaHocVien
+                && x.TrangThai != LeaveStatuses.Rejected && x.TrangThai != LeaveStatuses.Cancelled
+                && x.TuThoiDiem.Year == month.Year && x.TuThoiDiem.Month == month.Month);
+            return used >= limit ? $"Học viên đã có {used} lần nghỉ tranh thủ trong tháng {month:MM/yyyy} (định mức {limit}). Đơn mới sẽ vượt định mức." : null;
+        }
+    }
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<Student> ClassStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> TranhThuClassRecords { get; set; } = new();
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private TranhThuLeaveInput tranhThuInput = new()
+    {
+        TuThoiDiem = DateTime.Today.AddHours(7).AddMinutes(30),
+        DenThoiDiem = DateTime.Today.AddHours(11).AddMinutes(30),
+        DiaChiNoiNghi = LeaveCategories.DefaultWeekendAddress,
+        MonHoc = ""
+    };
+
+    private string SelectedTranhThuStudent
+    {
+        get => tranhThuInput.MaHocVien;
+        set
+        {
+            tranhThuInput.MaHocVien = value;
+            tranhThuInput.TenHocVien = ClassStudents.FirstOrDefault(x => x.MaHocVien == value)?.HoTen ?? "";
+        }
+    }
+
+    private static DateTime SetHour(DateTime current, string time)
+    {
+        if (TimeSpan.TryParseExact(time, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var span))
+            return current.Date.Add(span);
+        return current;
+    }
+
+    private DateTime TranhThuStartDate { get => tranhThuInput.TuThoiDiem.Date; set => tranhThuInput.TuThoiDiem = value.Date.Add(tranhThuInput.TuThoiDiem.TimeOfDay); }
+    private DateTime TranhThuEndDate { get => tranhThuInput.DenThoiDiem.Date; set => tranhThuInput.DenThoiDiem = value.Date.Add(tranhThuInput.DenThoiDiem.TimeOfDay); }
+    private string TranhThuStartTime { get => tranhThuInput.TuThoiDiem.ToString("HH:mm"); set => tranhThuInput.TuThoiDiem = SetHour(tranhThuInput.TuThoiDiem, value); }
+    private string TranhThuEndTime { get => tranhThuInput.DenThoiDiem.ToString("HH:mm"); set => tranhThuInput.DenThoiDiem = SetHour(tranhThuInput.DenThoiDiem, value); }
+
+    private async Task ResetTranhThuForm()
+    {
+        tranhThuInput = new TranhThuLeaveInput
+        {
+            Lop = SelectedClass,
+            TuThoiDiem = DateTime.Today.AddHours(7).AddMinutes(30),
+            DenThoiDiem = DateTime.Today.AddHours(11).AddMinutes(30),
+            DiaChiNoiNghi = LeaveCategories.DefaultWeekendAddress,
+            MonHoc = ""
+        };
+        formError = ""; await OnError.InvokeAsync("");
+        selectedSubjectId = "";
+    }
+
+    private async Task SubmitAndApproveTranhThu()
+    {
+        try
+        {
+            tranhThuInput.Lop = SelectedClass;
+            if (!int.TryParse(selectedSubjectId, out var subjectId))
+                throw new ArgumentException(
+                    "Vui lòng chọn môn học cần xin nghỉ.");
+
+            tranhThuInput.SubjectId = subjectId;
+            var created = Repository.CreateTranhThuLeave(Session, tranhThuInput);
+            await OnDataChanged.InvokeAsync();
+            await ResetTranhThuForm();
+            showForm = false;
+            await OnNotice.InvokeAsync($"Đã gửi đơn của {created.HoTen}. Môn đã chọn: {created.HienThiMonHoc}. Đơn đang chờ Phòng QLHV duyệt.");
+        }
+        catch (Exception ex)
+        {
+            formError = ValidationRules.ErrorMessage(ex);
+        }
+    }
+    private List<ClassSubject> classSubjects = new();
+    private string selectedSubjectId = "";
+    private string subjectClass = "";
+
+    protected override void OnParametersSet()
+    {
+        try
+        {
+            if (subjectClass != SelectedClass)
+            {
+                selectedSubjectId = "";
+                subjectClass = SelectedClass;
+            }
+
+            classSubjects = Repository.GetClassSubjects(
+                Session, SelectedClass);
+        }
+        catch
+        {
+            classSubjects = new();
+            throw;
+        }
+    }
+}

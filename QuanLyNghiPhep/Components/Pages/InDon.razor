@@ -1,0 +1,54 @@
+@page "/in-don/{Id:int}"
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<PageTitle>In đơn nghỉ phép</PageTitle>
+@if (!string.IsNullOrEmpty(error))
+{
+    <div class="alert error" style="margin:20px">@error <a href="/">Về trang chính</a></div>
+}
+else if (r is not null)
+{
+    <div class="no-print" style="text-align:center;margin:12px">
+        <button class="btn primary" onclick="window.print()">In / Lưu PDF</button>
+        <button class="btn outline" onclick="window.close()">Đóng</button>
+    </div>
+    <div class="print-sheet">
+        <div style="display:flex;justify-content:space-between;text-align:center">
+            <div><b>HỌC VIỆN AN NINH NHÂN DÂN</b><br />Lớp @r.Lop</div>
+            <div><b>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</b><br />Độc lập - Tự do - Hạnh phúc</div>
+        </div>
+        <h2>GIẤY CHO PHÉP NGHỈ<br /><small>Số: @r.MaDon</small></h2>
+        <p>Căn cứ đề nghị của đơn vị, cho phép học viên:</p>
+        <p>Họ và tên: <b>@r.HoTen</b> &nbsp; Mã học viên: <b>@r.MaHocVien</b> &nbsp; Lớp: <b>@r.Lop</b></p>
+        <p>Loại phép: <b>@r.TagLoaiNghi</b>@if (r.PhanLoaiNghi == LeaveCategories.TranhThu) { <text> — Môn: <b>@r.HienThiMonHoc</b></text> }</p>
+        <p>Thời gian nghỉ: từ <b>@r.TuThoiDiem.ToString("HH:mm dd/MM/yyyy")</b> đến <b>@r.DenThoiDiem.ToString("HH:mm dd/MM/yyyy")</b> (@r.SoNgay ngày)</p>
+        <p>Nơi nghỉ: @r.DiaChiNoiNghi</p>
+        @if (!string.IsNullOrWhiteSpace(r.LyDo) && r.LyDo != r.TagLoaiNghi) { <p>Lý do: @r.LyDo</p> }
+        <p>Trạng thái: <b>@r.TrangThai</b>@if (r.NgayDuyetPhong.HasValue) { <text> (Phòng QLHV duyệt @r.NgayDuyetPhong.Value.ToString("dd/MM/yyyy"))</text> }</p>
+        <p style="text-align:right"><i>Hà Nội, ngày @DateTime.Today.Day tháng @DateTime.Today.Month năm @DateTime.Today.Year</i></p>
+        <div class="sign">
+            <div><b>HỌC VIÊN</b><br /><br /><br /><br />@r.HoTen</div>
+            <div><b>CHỦ NHIỆM LỚP</b><br /><br /><br /><br />@r.NguoiTao</div>
+            <div><b>PHÒNG QUẢN LÝ HỌC VIÊN</b><br /><br /><br /><br />@r.NguoiDuyetPhong</div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int Id { get; set; }
+    private LeaveRequest? r;
+    private string error = "";
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Session.InitializeAsync();
+            if (!Session.IsAuthenticated) { error = "Vui lòng đăng nhập."; return; }
+            r = Repository.GetRequests(Session).FirstOrDefault(x => x.Id == Id);
+            if (r is null) error = "Không tìm thấy đơn hoặc bạn không có quyền xem.";
+            else if (r.TrangThai != LeaveStatuses.Approved) { error = "Chỉ được in giấy cho phép nghỉ sau khi Phòng QLHV duyệt."; r = null; }
+        }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+}

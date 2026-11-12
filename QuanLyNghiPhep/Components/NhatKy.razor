@@ -1,0 +1,35 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<section class="panel list-panel">
+    <div class="panel-head"><h2>Nhật ký hệ thống (300 thao tác gần nhất)</h2></div>
+    <div class="filters">
+        <div class="field wide"><label>Tìm theo người dùng, hành động, nội dung</label><input @bind="keyword" @bind:event="oninput" /></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(error)) { <div class="alert error">@error</div> }
+    <div class="table-scroll">
+        <table class="leave-table">
+            <thead><tr><th>THỜI GIAN</th><th>NGƯỜI THỰC HIỆN</th><th>HÀNH ĐỘNG</th><th>CHI TIẾT</th></tr></thead>
+            <tbody>
+                @foreach (var x in Filtered)
+                {
+                    <tr><td class="time-main">@x.At.ToString("HH:mm dd/MM/yyyy")</td><td>@x.User</td><td><span class="type-pill">@x.Action</span></td><td>@x.Detail</td></tr>
+                }
+                @if (!Filtered.Any()) { <tr><td colspan="4" class="empty-table">Chưa có nhật ký.</td></tr> }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    private List<AuditView> rows = new();
+    private string keyword = "", error = "";
+    private IEnumerable<AuditView> Filtered => rows.Where(x => string.IsNullOrWhiteSpace(keyword)
+        || x.User.Contains(keyword, StringComparison.OrdinalIgnoreCase) || x.Action.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+        || x.Detail.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+    protected override void OnInitialized()
+    {
+        try { rows = Repository.GetAuditView(Session); }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+}

@@ -1,0 +1,271 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<div>
+        @if (holidayStep > 0)
+    {
+    <div class="overlay"><div class="modal-box xl" @onclick:stopPropagation="true">
+    @if (holidayStep == 1)
+    {
+        <div class="form-body batch-creator-box">
+            <div class="step-banner">
+                <b>BƯỚC 1 / 2:</b> Nhập loại nghỉ Lễ/Tết (Tag ẩn sẽ tự động lấy theo tên loại nghỉ này), chọn thời gian nghỉ và tích vào học viên trong danh sách trực để loại đi.
+            </div>
+
+            <div class="form-grid" style="margin-bottom: 20px;">
+                <div class="field span-2">
+                    <label>Nhập loại nghỉ Lễ / Tết <em>*</em></label>
+                    @if (catalog.Count > 0)
+                    {
+                        <select @onchange="PickHoliday" style="margin-bottom:6px">
+                            <option value="">-- Chọn từ lịch nghỉ do Phòng QLHV khai báo --</option>
+                            @foreach (var h in catalog) { <option value="@h.Id">@h.Name (@h.FromDate.ToString("dd/MM") – @h.ToDate.ToString("dd/MM/yyyy"))</option> }
+                        </select>
+                    }
+                    <input @bind="holidayTypeName" placeholder="Ví dụ: Nghỉ Tết Nguyên Đán; Nghỉ lễ 30-4 1-5; Nghỉ lễ Quốc khánh 2-9..." />
+                </div>
+                <div class="field">
+                    <label>Nghỉ từ thời điểm <em>*</em></label>
+                    <div class="date-time-pair">
+                        <input type="date" @bind="HolidayStartDate" @bind:format="yyyy-MM-dd" />
+                        <input type="time" value="@HolidayStartTime" @onchange="e => HolidayStartTime = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Đến thời điểm <em>*</em></label>
+                    <div class="date-time-pair">
+                        <input type="date" @bind="HolidayEndDate" @bind:format="yyyy-MM-dd" />
+                        <input type="time" value="@HolidayEndTime" @onchange="e => HolidayEndTime = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-scroll">
+                <table class="leave-table">
+                    <thead>
+                        <tr>
+                            <th style="width:90px">STT</th>
+                            <th>TÊN HỌC VIÊN</th>
+                            <th>NGÀY SINH</th>
+                            <th>SỐ ĐIỆN THOẠI</th>
+                            <th style="width:260px">TÍCH CHỌN NGƯỜI TRỰC (ĐỂ LOẠI ĐI)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < ClassStudents.Count; i++)
+                        {
+                            var s = ClassStudents[i];
+                            bool isOnDuty = holidayDutyCodes.Contains(s.MaHocVien);
+                            <tr class="@(isOnDuty ? "duty-excluded-row" : "")">
+                                <td><b>@(i + 1)</b></td>
+                                <td><div class="student-name">@s.HoTen</div></td>
+                                <td>@s.NgaySinh</td>
+                                <td>@s.SoDienThoai</td>
+                                <td>
+                                    <label class="duty-checkbox-label">
+                                        <input type="checkbox" checked="@isOnDuty" @onchange="e => ToggleHolidayDuty(s.MaHocVien, e.Value)" />
+                                        <span>@(isOnDuty ? "Trực Lễ/Tết (Loại khỏi DS nghỉ)" : "Được nghỉ Lễ/Tết")</span>
+                                    </label>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (!string.IsNullOrEmpty(formError)) { <div class="alert error form-error" role="alert"> @formError</div> }
+        <div class="form-footer">
+                <span>Tag ẩn sẽ gắn: <b>@(string.IsNullOrWhiteSpace(holidayTypeName) ? "(Chưa nhập loại nghỉ)" : holidayTypeName)</b> · Số học viên được nghỉ: <b>@(ClassStudents.Count - holidayDutyCodes.Count)</b></span>
+                <div>
+                    <button class="btn outline" @onclick="() => holidayStep = 0">Hủy</button>
+                    <button class="btn primary" @onclick="BuildHolidayPreviewList">Tiếp tục</button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (holidayStep == 2)
+    {
+        <div class="form-body batch-creator-box">
+            <div class="step-banner success-banner">
+                <b>BƯỚC 2 / 2 — BẢNG DANH SÁCH NGHỈ LỄ / TẾT (@holidayTypeName):</b><br />Thời gian nghỉ: <b>Từ @holidayFrom.ToString("HH'h'mm 'ngày' dd/MM/yyyy") đến @holidayTo.ToString("HH'h'mm 'ngày' dd/MM/yyyy")</b> · Tag ẩn gắn: <span class="type-pill">@holidayTypeName</span>
+            </div>
+
+            <div class="table-scroll">
+                <table class="leave-table">
+                    <thead>
+                        <tr>
+                            <th style="width:70px">STT</th>
+                            <th>TÊN</th>
+                            <th>ĐỊA CHỈ NƠI NGHỈ</th>
+                            <th style="width:270px">THỜI GIAN XIN NGHỈ</th>
+                            <th style="width:210px">CHỈNH SỬA ĐỊA CHỈ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in holidayDraftItems)
+                        {
+                            <tr>
+                                <td><b>@item.STT</b></td>
+                                <td><div class="student-name">@item.HoTen</div></td>
+                                <td>
+                                    @if (item.IsEditingAddress)
+                                    {
+                                        <input class="table-input" @bind="item.DiaChiNoiNghi" placeholder="Nhập địa chỉ về nghỉ tại nhà..." />
+                                    }
+                                    else
+                                    {
+                                        <span>@item.DiaChiNoiNghi</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="time-main">@item.TuThoiDiem.ToString("HH'h'mm dd/MM/yyyy")</div>
+                                    <span class="subtext">đến @item.DenThoiDiem.ToString("HH'h'mm dd/MM/yyyy")</span>
+                                </td>
+                                <td>
+                                    <button type="button" class="btn small outline" @onclick="() => item.IsEditingAddress = !item.IsEditingAddress">
+                                        @(item.IsEditingAddress ? " Xong địa chỉ" : " Chỉnh sửa địa chỉ nơi nghỉ")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (!string.IsNullOrEmpty(formError)) { <div class="alert error form-error" role="alert"> @formError</div> }
+        <div class="form-footer">
+                <span>Nhấn <b>Gửi Phòng QLHV duyệt</b> để gửi danh sách nghỉ Lễ/Tết với tag ẩn <b>@holidayTypeName</b> lên Phòng Quản lý học viên.</span>
+                <div>
+                    <button class="btn outline" @onclick="() => holidayStep = 1">← Quay lại chỉnh sửa</button>
+                    <button class="btn primary" @onclick="ApproveHolidayBatch"> Gửi Phòng QLHV duyệt</button>
+                </div>
+            </div>
+        </div>
+    }
+    </div></div>
+    }
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Dữ liệu danh sách nghỉ Lễ và Tết đã gửi (Lớp @SelectedClass)</h2>
+        </div>
+    </div>
+    <RecentLeaveTable Items="@HolidayClassRecords" OnChanged="@OnDataChanged"><Toolbar><button class="btn primary" @onclick="StartCreateHolidayList"> <Icon Name="plus" />Tạo danh sách nghỉ Lễ / Tết</button></Toolbar></RecentLeaveTable>
+</section>
+
+@code {
+    private string formError = "";
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<Student> ClassStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> HolidayClassRecords { get; set; } = new();
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private List<Holiday> catalog = new();
+    protected override void OnInitialized() { try { catalog = Repository.GetHolidays(Session); } catch { } }
+    private void PickHoliday(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var id)) return;
+        var h = catalog.FirstOrDefault(x => x.Id == id);
+        if (h is null) return;
+        holidayTypeName = h.Name;
+        holidayFrom = h.FromDate; holidayTo = h.ToDate;
+    }
+    private int holidayStep = 0;
+    private string holidayTypeName = "Nghỉ lễ 30-4 1-5";
+    private DateTime holidayFrom = new(2026, 4, 30, 17, 0, 0);
+    private DateTime holidayTo = new(2026, 5, 3, 17, 0, 0);
+    private HashSet<string> holidayDutyCodes = new(StringComparer.OrdinalIgnoreCase);
+    private List<BatchLeaveDraftItem> holidayDraftItems = new();
+
+    private static DateTime SetHour(DateTime current, string time)
+    {
+        if (TimeSpan.TryParseExact(time, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var span))
+            return current.Date.Add(span);
+        return current;
+    }
+
+    private DateTime HolidayStartDate { get => holidayFrom.Date; set => holidayFrom = value.Date.Add(holidayFrom.TimeOfDay); }
+    private DateTime HolidayEndDate { get => holidayTo.Date; set => holidayTo = value.Date.Add(holidayTo.TimeOfDay); }
+    private string HolidayStartTime { get => holidayFrom.ToString("HH:mm"); set => holidayFrom = SetHour(holidayFrom, value); }
+    private string HolidayEndTime { get => holidayTo.ToString("HH:mm"); set => holidayTo = SetHour(holidayTo, value); }
+
+    private async Task StartCreateHolidayList()
+    {
+        holidayDutyCodes.Clear();
+        holidayStep = 1;
+        formError = ""; await OnError.InvokeAsync("");
+        await OnNotice.InvokeAsync("");
+    }
+
+    private void ToggleHolidayDuty(string code, object? isChecked)
+    {
+        bool flag = isChecked is bool b && b;
+        if (flag) holidayDutyCodes.Add(code);
+        else holidayDutyCodes.Remove(code);
+    }
+
+    private async Task BuildHolidayPreviewList()
+    {
+        if (string.IsNullOrWhiteSpace(holidayTypeName))
+        {
+            formError = "Vui lòng nhập loại nghỉ Lễ/Tết (ví dụ: Nghỉ Tết, Nghỉ lễ 30-4 1-5...).";
+            return;
+        }
+        if (holidayTo <= holidayFrom)
+        {
+            formError = "Thời gian kết thúc nghỉ Lễ/Tết phải sau thời gian bắt đầu.";
+            return;
+        }
+        var allowed = ClassStudents.Where(s => !holidayDutyCodes.Contains(s.MaHocVien)).ToList();
+        if (allowed.Count == 0)
+        {
+            formError = "Không còn học viên nào trong danh sách nghỉ Lễ/Tết.";
+            return;
+        }
+
+        holidayDraftItems = new List<BatchLeaveDraftItem>();
+        for (int i = 0; i < allowed.Count; i++)
+        {
+            var s = allowed[i];
+            holidayDraftItems.Add(new BatchLeaveDraftItem
+            {
+                STT = i + 1,
+                MaHocVien = s.MaHocVien,
+                HoTen = s.HoTen,
+                Lop = s.Lop,
+                DiaChiNoiNghi = LeaveCategories.DefaultWeekendAddress,
+                TuThoiDiem = holidayFrom,
+                DenThoiDiem = holidayTo,
+                IsEditingAddress = false
+            });
+        }
+        formError = ""; await OnError.InvokeAsync("");
+        holidayStep = 2;
+    }
+
+    private async Task ApproveHolidayBatch()
+    {
+        try
+        {
+            var created = Repository.CreateBatchLeaveList(
+                Session,
+                SelectedClass,
+                LeaveCategories.LeTet,
+                holidayTypeName.Trim(),
+                holidayFrom,
+                holidayTo,
+                holidayDraftItems);
+            holidayStep = 0;
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã gửi danh sách \"{holidayTypeName.Trim()}\" ({created.Count} học viên lớp {SelectedClass}) và đang chờ Phòng Quản lý học viên duyệt.");
+        }
+        catch (Exception ex)
+        {
+            formError = ValidationRules.ErrorMessage(ex);
+        }
+    }
+}

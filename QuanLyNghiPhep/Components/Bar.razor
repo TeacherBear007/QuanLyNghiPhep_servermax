@@ -1,0 +1,6 @@
+<div class="bar-row"><span class="lbl">@Label</span><span class="bar-wrap"><span class="bar" style="width:@(Math.Max(2, 100 * Value / Math.Max(1, Max)))%"></span></span><span class="val">@Value</span></div>
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public int Value { get; set; }
+    [Parameter] public int Max { get; set; } = 1;
+}

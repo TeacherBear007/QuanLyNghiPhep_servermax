@@ -1,0 +1,20 @@
+@using System.Globalization
+@{ var max = Math.Max(1, Items.Select(x => x.Value).DefaultIfEmpty(0).Max()); }
+<div class="cc" style="height:@(Height)px">
+    @foreach (var it in Items)
+    {
+        <div class="cc-col" title="@it.Label: @it.Value">
+            <span class="cc-val">@(it.Value > 0 ? it.Value.ToString() : "")</span>
+            <div class="cc-bar" style="height:calc((100% - 20px) * @R(it.Value, max));background:@Color"></div>
+        </div>
+    }
+</div>
+<div class="cc-axis">
+    @foreach (var it in Items) { <span>@it.Label</span> }
+</div>
+@code {
+    [Parameter, EditorRequired] public List<ChartPoint> Items { get; set; } = new();
+    [Parameter] public string Color { get; set; } = ChartColors.Brand;
+    [Parameter] public int Height { get; set; } = 200;
+    private static string R(int v, int max) => ((double)v / max).ToString("0.###", CultureInfo.InvariantCulture);
+}

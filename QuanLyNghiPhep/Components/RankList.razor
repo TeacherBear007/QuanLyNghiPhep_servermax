@@ -1,0 +1,27 @@
+@using System.Globalization
+@{ var max = Math.Max(1, Items.Select(x => x.Value).DefaultIfEmpty(0).Max()); int n = 0; }
+@if (Items.Count == 0)
+{
+    <p class="muted">Chưa có dữ liệu.</p>
+}
+else
+{
+    <div class="rk">
+        @foreach (var it in Items)
+        {
+            n++;
+            <div class="rk-row">
+                <span class="rk-n">@n</span>
+                <div class="rk-main">
+                    <div class="rk-top"><span class="rk-name">@it.Label@if (!string.IsNullOrEmpty(it.Sub)) { <small>@it.Sub</small> }</span><b>@it.Value</b></div>
+                    <div class="rk-track"><div class="rk-fill" style="width:@W(it.Value, max)%;background:@Color"></div></div>
+                </div>
+            </div>
+        }
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public List<RankItem> Items { get; set; } = new();
+    [Parameter] public string Color { get; set; } = ChartColors.Brand;
+    private static string W(int v, int max) => (100.0 * v / max).ToString("0.#", CultureInfo.InvariantCulture);
+}

@@ -1,0 +1,244 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+
+<div>
+        @if (weekendStep > 0)
+    {
+    <div class="overlay"><div class="modal-box xl" @onclick:stopPropagation="true">
+    @if (weekendStep == 1)
+    {
+        <div class="form-body batch-creator-box">
+            <div class="step-banner">
+                <b>BƯỚC 1 / 2:</b> Chọn thời gian nghỉ cuối tuần và <b>tích vào những người ở trong danh sách trực của tuần đó để loại đi</b> (chỉ để lại những người được nghỉ cuối tuần).
+            </div>
+
+            <div class="form-grid" style="margin-bottom: 20px;">
+                <div class="field">
+                    <label>Nghỉ từ thời điểm <em>*</em></label>
+                    <div class="date-time-pair">
+                        <input type="date" @bind="WeekendStartDate" @bind:format="yyyy-MM-dd" />
+                        <input type="time" value="@WeekendStartTime" @onchange="e => WeekendStartTime = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Đến thời điểm <em>*</em></label>
+                    <div class="date-time-pair">
+                        <input type="date" @bind="WeekendEndDate" @bind:format="yyyy-MM-dd" />
+                        <input type="time" value="@WeekendEndTime" @onchange="e => WeekendEndTime = e.Value?.ToString() ?? string.Empty" />
+                    </div>
+                </div>
+            </div>
+
+            <div class="table-scroll">
+                <table class="leave-table">
+                    <thead>
+                        <tr>
+                            <th style="width:90px">STT</th>
+                            <th>TÊN HỌC VIÊN</th>
+                            <th>NGÀY SINH</th>
+                            <th>SỐ ĐIỆN THOẠI</th>
+                            <th style="width:260px">TÍCH CHỌN NGƯỜI TRỰC (ĐỂ LOẠI ĐI)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (int i = 0; i < ClassStudents.Count; i++)
+                        {
+                            var s = ClassStudents[i];
+                            bool isOnDuty = weekendDutyCodes.Contains(s.MaHocVien);
+                            <tr class="@(isOnDuty ? "duty-excluded-row" : "")">
+                                <td><b>@(i + 1)</b></td>
+                                <td><div class="student-name">@s.HoTen</div></td>
+                                <td>@s.NgaySinh</td>
+                                <td>@s.SoDienThoai</td>
+                                <td>
+                                    <label class="duty-checkbox-label">
+                                        <input type="checkbox" checked="@isOnDuty" @onchange="e => ToggleWeekendDuty(s.MaHocVien, e.Value)" />
+                                        <span>@(isOnDuty ? "Đang trực tuần (Loại khỏi DS nghỉ)" : "Được nghỉ cuối tuần")</span>
+                                    </label>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (!string.IsNullOrEmpty(formError)) { <div class="alert error form-error" role="alert"> @formError</div> }
+        <div class="form-footer">
+                <span>Quân số lớp: <b>@ClassStudents.Count</b> · Trực tuần (loại ra): <b>@weekendDutyCodes.Count</b> · Được nghỉ cuối tuần: <b>@(ClassStudents.Count - weekendDutyCodes.Count)</b> học viên</span>
+                <div>
+                    <button class="btn outline" @onclick="() => weekendStep = 0">Hủy</button>
+                    <button class="btn primary" @onclick="BuildWeekendPreviewList">Tiếp tục</button>
+                </div>
+            </div>
+        </div>
+    }
+    else if (weekendStep == 2)
+    {
+        <div class="form-body batch-creator-box">
+            <div class="step-banner success-banner">
+                <b>BƯỚC 2 / 2 — BẢNG DANH SÁCH NGHỈ CUỐI TUẦN:</b><br />Thời gian nghỉ: <b>Từ @weekendFrom.ToString("HH'h'mm 'ngày' dd/MM/yyyy") đến @weekendTo.ToString("HH'h'mm 'ngày' dd/MM/yyyy")</b> · Tag ẩn tự động gắn: <span class="type-pill">@LeaveCategories.TagCuoiTuan</span>
+            </div>
+
+            <div class="table-scroll">
+                <table class="leave-table">
+                    <thead>
+                        <tr>
+                            <th style="width:70px">STT</th>
+                            <th>TÊN</th>
+                            <th>ĐỊA CHỈ NƠI NGHỈ</th>
+                            <th style="width:270px">THỜI GIAN XIN NGHỈ</th>
+                            <th style="width:210px">CHỈNH SỬA ĐỊA CHỈ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in weekendDraftItems)
+                        {
+                            <tr>
+                                <td><b>@item.STT</b></td>
+                                <td><div class="student-name">@item.HoTen</div></td>
+                                <td>
+                                    @if (item.IsEditingAddress)
+                                    {
+                                        <input class="table-input" @bind="item.DiaChiNoiNghi" placeholder="Nhập địa chỉ về nghỉ tại nhà..." />
+                                    }
+                                    else
+                                    {
+                                        <span>@item.DiaChiNoiNghi</span>
+                                    }
+                                </td>
+                                <td>
+                                    <div class="time-main">@item.TuThoiDiem.ToString("HH'h'mm dd/MM/yyyy")</div>
+                                    <span class="subtext">đến @item.DenThoiDiem.ToString("HH'h'mm dd/MM/yyyy")</span>
+                                </td>
+                                <td>
+                                    <button type="button" class="btn small outline" @onclick="() => item.IsEditingAddress = !item.IsEditingAddress">
+                                        @(item.IsEditingAddress ? " Xong địa chỉ" : " Chỉnh sửa địa chỉ nơi nghỉ")
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            @if (!string.IsNullOrEmpty(formError)) { <div class="alert error form-error" role="alert"> @formError</div> }
+        <div class="form-footer">
+                <span>Mặc định địa chỉ nơi nghỉ là <b>Phường Hà Đông, Thành phố Hà Nội</b>. Nhấn <b>Gửi Phòng QLHV duyệt</b> để gửi danh sách của lớp đến Phòng Quản lý học viên xét duyệt.</span>
+                <div>
+                    <button class="btn outline" @onclick="() => weekendStep = 1">← Quay lại chọn người trực</button>
+                    <button class="btn primary" @onclick="ApproveWeekendBatch"> Gửi Phòng QLHV duyệt</button>
+                </div>
+            </div>
+        </div>
+    }
+    </div></div>
+    }
+</div>
+
+<section class="panel">
+    <div class="panel-head">
+        <div>
+            <h2>Dữ liệu danh sách nghỉ cuối tuần đã gửi (Lớp @SelectedClass)</h2>
+        </div>
+    </div>
+    <RecentLeaveTable Items="@WeekendClassRecords" OnChanged="@OnDataChanged"><Toolbar><button class="btn primary" @onclick="StartCreateWeekendList"> <Icon Name="plus" />Tạo danh sách nghỉ cuối tuần</button></Toolbar></RecentLeaveTable>
+</section>
+
+@code {
+    private string formError = "";
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<Student> ClassStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> WeekendClassRecords { get; set; } = new();
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private int weekendStep = 0;
+    private DateTime weekendFrom = new(2026, 11, 6, 17, 0, 0);
+    private DateTime weekendTo = new(2026, 11, 7, 17, 0, 0);
+    private HashSet<string> weekendDutyCodes = new(StringComparer.OrdinalIgnoreCase);
+    private List<BatchLeaveDraftItem> weekendDraftItems = new();
+
+    private static DateTime SetHour(DateTime current, string time)
+    {
+        if (TimeSpan.TryParseExact(time, @"hh\:mm", System.Globalization.CultureInfo.InvariantCulture, out var span))
+            return current.Date.Add(span);
+        return current;
+    }
+
+    private DateTime WeekendStartDate { get => weekendFrom.Date; set => weekendFrom = value.Date.Add(weekendFrom.TimeOfDay); }
+    private DateTime WeekendEndDate { get => weekendTo.Date; set => weekendTo = value.Date.Add(weekendTo.TimeOfDay); }
+    private string WeekendStartTime { get => weekendFrom.ToString("HH:mm"); set => weekendFrom = SetHour(weekendFrom, value); }
+    private string WeekendEndTime { get => weekendTo.ToString("HH:mm"); set => weekendTo = SetHour(weekendTo, value); }
+
+    private async Task StartCreateWeekendList()
+    {
+        weekendDutyCodes.Clear();
+        weekendStep = 1;
+        formError = ""; await OnError.InvokeAsync("");
+        await OnNotice.InvokeAsync("");
+    }
+
+    private void ToggleWeekendDuty(string code, object? isChecked)
+    {
+        bool flag = isChecked is bool b && b;
+        if (flag) weekendDutyCodes.Add(code);
+        else weekendDutyCodes.Remove(code);
+    }
+
+    private async Task BuildWeekendPreviewList()
+    {
+        if (weekendTo <= weekendFrom)
+        {
+            formError = "Thời gian kết thúc nghỉ cuối tuần phải sau thời gian bắt đầu.";
+            return;
+        }
+        var allowed = ClassStudents.Where(s => !weekendDutyCodes.Contains(s.MaHocVien)).ToList();
+        if (allowed.Count == 0)
+        {
+            formError = "Không còn học viên nào trong danh sách nghỉ cuối tuần (bạn đã tích trực toàn bộ lớp).";
+            return;
+        }
+
+        weekendDraftItems = new List<BatchLeaveDraftItem>();
+        for (int i = 0; i < allowed.Count; i++)
+        {
+            var s = allowed[i];
+            weekendDraftItems.Add(new BatchLeaveDraftItem
+            {
+                STT = i + 1,
+                MaHocVien = s.MaHocVien,
+                HoTen = s.HoTen,
+                Lop = s.Lop,
+                DiaChiNoiNghi = LeaveCategories.DefaultWeekendAddress,
+                TuThoiDiem = weekendFrom,
+                DenThoiDiem = weekendTo,
+                IsEditingAddress = false
+            });
+        }
+        formError = ""; await OnError.InvokeAsync("");
+        weekendStep = 2;
+    }
+
+    private async Task ApproveWeekendBatch()
+    {
+        try
+        {
+            var created = Repository.CreateBatchLeaveList(
+                Session,
+                SelectedClass,
+                LeaveCategories.CuoiTuan,
+                LeaveCategories.TagCuoiTuan,
+                weekendFrom,
+                weekendTo,
+                weekendDraftItems);
+            weekendStep = 0;
+            await OnDataChanged.InvokeAsync();
+            await OnNotice.InvokeAsync($"Đã gửi danh sách nghỉ cuối tuần ({created.Count} học viên lớp {SelectedClass}) và đang chờ Phòng Quản lý học viên duyệt.");
+        }
+        catch (Exception ex)
+        {
+            formError = ValidationRules.ErrorMessage(ex);
+        }
+    }
+}

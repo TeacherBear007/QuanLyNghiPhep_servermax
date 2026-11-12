@@ -1,0 +1,264 @@
+Hoanganh123 — kết quả kiểm tra tự động
+Ngày bàn giao: 12/11/2026
+
+Build: thành công, 0 lỗi, 0 cảnh báo.
+PASS Seed class migrated to immutable manager ID
+PASS Account edit persists all personal fields
+PASS Account edit rejects invalid phone
+PASS Account edit rejects duplicate CAND number
+PASS Account edit rejects duplicate faculty ID
+PASS Invalid password rejects account edit
+PASS Failed edit rolls back username and role
+PASS Account edit supports faculty fields and role change
+PASS Account edit saves optional new password
+PASS Admin reveal matches password changed with profile
+PASS Password reveal denies non-admin server-side
+PASS Initial password and admin reveal both use Demo@123
+PASS Startup does not overwrite passwords changed after initial setup
+PASS Recoverable password is encrypted at rest
+PASS Self-service change synchronizes password revealed to admin
+PASS Reset synchronizes password revealed to admin
+PASS Password reveal records an audit event without plaintext
+PASS Manager sees only assigned classes
+PASS Foreign class students are denied server-side
+PASS Unfiltered student query cannot leak foreign class
+PASS Foreign leave list is denied
+PASS Manager cannot read global audit log
+PASS Manager cannot create classes
+PASS Manager cannot add student catalog records
+PASS Admin validates profile phone
+PASS Faculty identifiers cannot be duplicated
+PASS Cannot modify another class subject catalog
+PASS Faculty sees only its assigned subjects
+PASS Faculty sees only assigned classes
+PASS Faculty cannot read another faculty's class roster
+PASS Managed class leave waits for Phong QLHV approval
+PASS Faculty cannot see request before Phong approval
+PASS Platoon cannot approve at Phong stage
+PASS Submission does not masquerade as final approval
+PASS Approval requires an explicit selected class
+PASS Approval denies a request outside the selected class
+PASS Rejection requires a reason
+PASS Repeated approval cannot overwrite completed review
+PASS Phong QLHV approval makes request approved
+PASS Faculty request visibility respects subject assignment
+PASS Overlapping leave is rejected
+PASS Subject must belong to selected class
+PASS Individual leave cannot target another manager's class
+PASS Weekend batch cannot target another manager's class
+PASS Holiday batch cannot target another manager's class
+PASS Draft creation cannot target foreign student
+PASS Foreign request editing denied
+PASS Foreign request deletion denied
+PASS Foreign review denied
+PASS Unfiltered request query hides foreign requests
+PASS Export rechecks scope and filters foreign IDs
+PASS Export is valid worksheet XML
+PASS Editing student preserves approved request snapshot
+PASS Submitted request preserves original student snapshot
+PASS Class manager cannot approve own submission
+PASS Submitted request snapshot remains unchanged
+PASS Cancel requires a reason
+PASS Approved request can be cancelled with reason
+PASS Cancelled request cannot be cancelled again
+PASS Approved request cannot be deleted
+PASS Approved request cannot be edited
+PASS Student with history is archived instead of deleted
+PASS Archived students disappear from active roster
+PASS Staff can see archived student status
+PASS Archiving preserves every historical request
+PASS Archived student cannot receive new draft
+PASS Archived student cannot receive batch leave
+PASS Manager cannot restore catalog records
+PASS Staff restores archived student
+PASS Unused student may be permanently deleted
+PASS Legacy academic history forces archive, not cascade deletion
+PASS Removed module's legacy tables remain unchanged
+PASS Rename revokes old authentication session
+PASS Rename preserves class assignment by immutable ID
+PASS Staff class table displays current manager name
+PASS Renamed manager assignment survives restart
+PASS Archived state survives restart
+PASS Reassignment immediately revokes old manager scope
+PASS New manager gains reassigned class
+PASS Cannot delete an account assigned to a class
+PASS Disabling account immediately blocks data access
+PASS Enabled manager keeps assignments
+PASS Password reset revokes prior session
+PASS Admin cannot disable own account
+PASS Admin cannot delete own account
+PASS Non-admin cannot read account administration
+PASS Invalid manager assignment rejected
+PASS Assignment cannot silently create a new class
+PASS Audit identifies actors by immutable account ID
+PASS Old SQLite schema gains manager ID and retains ownership
+PASS Old students default to active during schema upgrade
+PASS Schema upgrade retains historical leave rows
+PASS Legacy JSON migrates student and manager ownership
+PASS Migration never overwrites original JSON backup
+PASS Migration preserves next request ID
+PASS Migration never auto-assigns an unknown legacy class
+PASS Duplicate legacy JSON keys are rejected before persistence
+PASS Rejected JSON migration preserves its source and leaves no partial records
+PASS Rename enforces the same username length as account creation
+PASS Admin password reset enforces the server length limit
+PASS Birth date uses Vietnamese day/month order on an English machine
+PASS CSV preserves quoted commas, UTF-8 BOM and date order
+PASS CSV separator is detected outside quoted fields
+PASS CSV escaped quotes are preserved
+PASS Quoted multiline CSV field is parsed as one record
+PASS Four-column CSV without headers remains supported
+PASS Malformed CSV quoting is rejected
+PASS Import never fabricates missing birth dates or phone numbers
+PASS Incomplete spreadsheet headers are rejected
+PASS Partially entered row cannot silently lose a student
+PASS Import enforces the 1000-student limit
+PASS Generated class template round-trips through the Excel importer
+PASS Four-column XLSX without headers is parsed correctly
+PASS Native Excel serial birth dates are normalized
+PASS Excel 1904 date system is handled without shifting birth dates
+PASS Importer follows workbook sheet order instead of sorting ZIP filenames
+PASS External XML entities are prohibited
+PASS Every exported data column matches its header
+PASS Student ID column has the correct Excel header
+PASS User-entered spreadsheet formulas are exported as literal text
+PASS Invalid XML control characters cannot corrupt the exported workbook
+PASS Student creation canonicalizes class foreign keys
+PASS Case-only student ID input does not break references
+PASS Class subject queries accept equivalent class casing
+PASS Student date validation rejects impossible calendar dates
+PASS Student phone validation is enforced server-side
+PASS A bad class row cancels the entire create operation
+PASS Failed class creation leaves no partial class or student records
+PASS Explicit duplicate student codes are rejected rather than silently changed
+PASS Legacy manual-student path cannot bypass staff-only roster management
+PASS Class transfer is blocked while a leave request is pending
+PASS Failed transfer keeps original roster membership
+PASS Class transfer succeeds after pending request is resolved
+PASS Two repository instances cannot overwrite each other's changes
+PASS Parallel roster updates retain every student
+PASS Storage failure is surfaced without claiming success
+PASS Failed write rolls back the request and ID counter
+PASS Repository recovers correctly after a failed database transaction
+PASS Class rename moves students
+PASS Class rename rejects an existing name
+PASS Platoon cannot rename classes
+PASS Class without requests can be deleted
+PASS Class with requests cannot be deleted
+PASS Holiday catalog readable by platoon
+PASS Platoon cannot edit holiday catalog
+PASS Holiday end must follow start
+PASS Generated passwords are 10 chars, meet policy and avoid ambiguous characters
+PASS Backup includes encryption keys
+PASS Restore retains database and password encryption keys
+PASS Restored keys decrypt the existing password on another host
+ALL 150 BUSINESS CHECKS PASSED
+PASS Anonymous cannot see admin controls
+PASS Login rejects missing CSRF token
+PASS admin signs in
+PASS trungdoi signs in
+PASS phongqlhv signs in
+PASS bomon signs in
+PASS Admin page renders controls
+PASS Manager home renders assigned class picker
+PASS Faculty home renders scoped leave lookup
+PASS Faculty cannot see admin actions
+PASS Removed academic route returns 404
+PASS Records page provides filtered Excel export
+PASS Password page renders
+PASS Private file blocked: accounts.db
+PASS Private file blocked: business.db
+PASS Private file blocked: tai-khoan-ban-dau.txt
+PASS admin can access own password form
+PASS trungdoi can access own password form
+PASS phongqlhv can access own password form
+PASS Self-service password change succeeds
+PASS Old cookie revoked after password change
+PASS New password signs in
+ALL 22 HTTP CHECKS PASSED
+PASS Eye reveals input with accessible pressed state
+PASS Eye hides input again
+PASS Failure restores the username submitted by the user
+PASS Failure clears and masks password
+PASS Failure displays error and re-enables submit
+PASS Failure never navigates to a fresh autofilled form
+PASS Rate limit has a useful message
+PASS Expired form provides recovery instructions
+PASS Successful authentication navigates to home
+PASS Double submit is ignored while a login is in progress
+ALL 10 JAVASCRIPT CHECKS PASSED
+PASS admin logs in with Demo@123
+PASS admin has an authenticated page
+PASS Admin page includes reveal buttons
+PASS Passwords are masked before admin clicks reveal
+PASS phongqlhv logs in with Demo@123
+PASS phongqlhv has an authenticated page
+PASS Pending queue renders actual class picker
+PASS Removed platoon catalogue is absent from rendered HTML
+PASS thaythuyetk1 logs in with Demo@123
+PASS thaythuyetk1 has an authenticated page
+PASS khoanv7 logs in with Demo@123
+PASS khoanv7 has an authenticated page
+PASS khoallct logs in with Demo@123
+PASS khoallct has an authenticated page
+PASS Wrong credentials return JSON without redirect or saved account
+PASS Login HTML includes eye and inline error
+PASS Delivered account inventory matches database names
+ALL 17 DELIVERY CHECKS PASSED
+
+Không có kết quả kiểm tra trực quan trình duyệt; xem giới hạn trong README.md.
+
+
+CẬP NHẬT GIAO DIỆN ĐĂNG NHẬP THEO HANH009
+Build lại thành công: 0 lỗi, 0 cảnh báo.
+PASS Login inputs render empty even with username query parameter
+PASS Glass login preserves academy branding and password eye
+PASS Login discourages automatic credential filling
+PASS Updated login script has cache version
+PASS Anonymous cannot see admin controls
+PASS Login rejects missing CSRF token
+PASS admin signs in
+PASS trungdoi signs in
+PASS phongqlhv signs in
+PASS bomon signs in
+PASS Admin page renders controls
+PASS Manager home renders assigned class picker
+PASS Faculty home renders scoped leave lookup
+PASS Faculty cannot see admin actions
+PASS Removed academic route returns 404
+PASS Records page provides filtered Excel export
+PASS Password page renders
+PASS Private file blocked: accounts.db
+PASS Private file blocked: business.db
+PASS Private file blocked: tai-khoan-ban-dau.txt
+PASS admin can access own password form
+PASS trungdoi can access own password form
+PASS phongqlhv can access own password form
+PASS Self-service password change succeeds
+PASS Old cookie revoked after password change
+PASS New password signs in
+ALL 26 HTTP CHECKS PASSED
+PASS New login starts empty and blocks initial autofill
+PASS Click or Tab unlocks username
+PASS Click or Tab unlocks password
+PASS Late pageshow never erases user input
+PASS Back/Forward restores an empty masked form
+PASS Eye reveals input with accessible pressed state
+PASS Eye hides input again
+PASS Failure restores the username submitted by the user
+PASS Failure clears and masks password
+PASS Failure displays error and re-enables submit
+PASS Failure never navigates to a fresh autofilled form
+PASS Rate limit has a useful message
+PASS Expired form provides recovery instructions
+PASS Successful authentication navigates to home
+PASS Double submit is ignored while a login is in progress
+ALL 15 JAVASCRIPT CHECKS PASSED
+AppData và code backend: SHA-256 không đổi. Chưa kiểm tra trực quan trong trình duyệt.
+
+CẬP NHẬT CI/CD VÀ DOCKER CỔNG 10999
+- Build .NET 8 Release: 0 lỗi, 0 cảnh báo.
+- Đạt 150 kiểm tra nghiệp vụ, 26 HTTP và 15 JavaScript.
+- Chạy Production thử với AppData tạm: /healthz trả ok, admin được cấp mật khẩu ngẫu nhiên trong tệp quyền 0600, proxy tin cậy chuyển scheme HTTPS, cookie Secure, đăng nhập thành công, Demo@123 bị chặn, Blazor mở WebSocket trực tiếp trên Kestrel và tài khoản giữ nguyên sau khi khởi động lại.
+- Kiểm tra cú pháp YAML/Bash. Giả lập lệnh Nginx/Certbot để kiểm tra áp cấu hình mới, bỏ qua reload khi giống, kích hoạt cấu hình TLS và khôi phục cấu hình cũ khi nginx -t báo lỗi.
+- Docker build, Nginx thật qua HTTPS/WebSocket, SSH server và cấp chứng chỉ thật chưa chạy trong môi trường kiểm tra. Các bước này được cấu hình trong workflow và chạy khi đưa repo lên GitHub.

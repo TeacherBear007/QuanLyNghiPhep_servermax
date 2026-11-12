@@ -1,0 +1,192 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+@inject IJSRuntime JS
+
+@if (!string.IsNullOrWhiteSpace(error)) { <div class="alert error">@error</div> }
+@if (!string.IsNullOrWhiteSpace(message)) { <div class="alert success">@message</div> }
+<div class="table-toolbar">
+    <span class="toolbar-count">@View.Count bản ghi</span>
+    <div class="row-actions">
+        @if (ShowExport && Session.CanExport) { <button type="button" class="btn outline" @onclick="ExportView"><Icon Name="download" />Xuất Excel</button> }
+        @Toolbar
+    </div>
+</div>
+@if (ShowFilters)
+{
+    <div class="filters">
+        <div class="field wide"><label>Tìm kiếm</label><input @bind="Keyword" @bind:event="oninput" placeholder="Tên, mã học viên, nơi nghỉ, lý do" /></div>
+        <div class="field"><label>Trạng thái</label>
+            <select @bind="Status"><option value="">Tất cả</option>@foreach (var st in Items.Select(x => x.TrangThai).Distinct().OrderBy(x => x)) { <option value="@st">@st</option> }</select></div>
+        @if (SubjectOptions.Count > 1)
+        {
+            <div class="field"><label>Môn học</label>
+                <select @bind="Subject"><option value="">Tất cả</option>@foreach (var m in SubjectOptions) { <option value="@m">@m</option> }</select></div>
+        }
+        <div class="field"><label>Từ ngày</label><input type="date" @bind="FromDate" @bind:format="yyyy-MM-dd" /></div>
+        <div class="field"><label>Đến ngày</label><input type="date" @bind="ToDate" @bind:format="yyyy-MM-dd" /></div>
+        <div class="filter-buttons"><button class="btn outline" @onclick="ResetFilters">Đặt lại</button></div>
+    </div>
+}
+<div class="table-scroll">
+    <table class="leave-table">
+        <thead>
+            <tr>
+                <th>STT</th><th>HỌ VÀ TÊN</th>@if (ShowClassCol) { <th>LỚP</th> }@if (ShowCategoryCol) { <th>LOẠI PHÉP</th> }@if (ShowSubjectCol) { <th>MÔN HỌC</th> }
+                <th>THỜI GIAN NGHỈ</th><th>NƠI NGHỈ / LÝ DO</th><th>TRẠNG THÁI</th><th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (!PageItems.Any())
+            {
+                <tr><td class="empty-table" colspan="10">Không có dữ liệu phù hợp.</td></tr>
+            }
+            else
+            {
+                int rowIndex = (currentPage - 1) * PageSize;
+                foreach (var item in PageItems)
+                {
+                    rowIndex++;
+                    var canAct = item.TrangThai == LeaveStatuses.Approved || item.TrangThai == LeaveStatuses.WaitingPhong;
+                    <tr @key="item.Id">
+                        <td><b>@rowIndex</b></td>
+                        <td><div class="student-name">@item.HoTen</div><span class="subtext">@item.MaHocVien</span></td>
+                        @if (ShowClassCol) { <td><span class="class-badge">@item.Lop</span></td> }
+                        @if (ShowCategoryCol) { <td><span class="type-pill @CatClass(item)">@item.TagLoaiNghi</span>@if (item.PhanLoaiNghi == LeaveCategories.TranhThu) { <span class="subtext" style="display:block">@item.HienThiMonHoc</span> }</td> }
+                        @if (ShowSubjectCol) { <td>@if (item.PhanLoaiNghi == LeaveCategories.TranhThu) { <span class="subject-tag-badge"> @item.HienThiMonHoc</span> } else { <span class="subject-neutral-badge">@item.HienThiMonHoc</span> }</td> }
+                        <td class="time-cell"><div class="time-main">@DateText(item)</div><span class="subtext">@item.TuThoiDiem.ToString("HH:mm") – @item.DenThoiDiem.ToString("HH:mm")</span></td>
+                        <td class="reason-cell">
+                            <div>@item.DiaChiNoiNghi</div>
+                            @if (!string.IsNullOrWhiteSpace(item.LyDo) && item.LyDo != item.TagLoaiNghi) { <span class="subtext">Lý do: @item.LyDo</span> }
+                            @if (!string.IsNullOrWhiteSpace(item.GhiChuDuyet)) { <span class="subtext">Ghi chú: @item.GhiChuDuyet</span> }
+                        </td>
+                        <td><span class="status-pill @StatusClass(item.TrangThai)">@item.TrangThai</span></td>
+                        <td>
+                            <div class="row-actions">
+                                @if (item.TrangThai == LeaveStatuses.Approved)
+                                {
+                                    <a class="btn outline" href="/in-don/@item.Id" target="_blank"><Icon Name="printer" />In</a>
+                                }
+                                @if (OnChanged.HasDelegate && canAct)
+                                {
+                                    @if (AllowReview && !string.IsNullOrWhiteSpace(ReviewClass) && item.Lop.Equals(ReviewClass, StringComparison.OrdinalIgnoreCase) && Session.Role == UserRole.PhongQLHV && item.TrangThai == LeaveStatuses.WaitingPhong)
+                                    {
+                                        <button class="btn primary" @onclick="() => Approve(item)">Duyệt</button>
+                                        <button class="btn danger" @onclick="() => AskReject(item)">Từ chối</button>
+                                    }
+                                    @if (Session.Role == UserRole.PhongQLHV || Session.Role == UserRole.TrungDoi)
+                                    {
+                                        <button class="btn outline" @onclick="() => AskCancel(item)">Hủy</button>
+                                    }
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+</div>
+<div class="table-pagination">
+    <span>Hiển thị <b>@(View.Count == 0 ? 0 : (currentPage - 1) * PageSize + 1) – @Math.Min(currentPage * PageSize, View.Count)</b> / @View.Count bản ghi</span>
+    <div class="pagination-controls">
+        <button disabled="@(currentPage <= 1)" @onclick="() => currentPage--">‹ Trang trước</button>
+        <span>Trang @currentPage / @TotalPages</span>
+        <button disabled="@(currentPage >= TotalPages)" @onclick="() => currentPage++">Trang sau ›</button>
+    </div>
+</div>
+
+@if (target is not null)
+{
+    <div class="overlay" @onclick="() => target = null">
+        <div class="modal-box" @onclick:stopPropagation="true">
+            <h3>@(action == "reject" ? "Từ chối đơn" : "Hủy đơn")</h3>
+            <p><b>@target.HoTen</b> (@target.MaDon) — Lớp @target.Lop — @target.TuThoiDiem.ToString("dd/MM/yyyy") → @target.DenThoiDiem.ToString("dd/MM/yyyy")</p>
+            <label>Lý do (bắt buộc)</label>
+            <textarea @bind="reason" @bind:event="oninput" maxlength="300"></textarea>
+            <div class="row-actions" style="justify-content:flex-end">
+                <button class="btn outline" @onclick="() => target = null">Đóng</button>
+                <button class="btn danger" disabled="@string.IsNullOrWhiteSpace(reason)" @onclick="Confirm">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public List<LeaveRequest> Items { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public bool AllowReview { get; set; }
+    [Parameter] public string ReviewClass { get; set; } = "";
+    [Parameter] public bool ShowClass { get; set; } = true;
+    [Parameter] public bool ShowFilters { get; set; }
+    [Parameter] public bool ShowExport { get; set; } = true;
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+    private async Task ExportView()
+    {
+        error = message = "";
+        try
+        {
+            var bytes = Repository.ExportExcel(Session, View);
+            await JS.InvokeVoidAsync("leaveApp.downloadBase64", $"DanhSachNghiPhep_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", Convert.ToBase64String(bytes),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+    private string _kw = "", _st = "", _sub = "";
+    private DateTime? _from, _to;
+    private string Keyword { get => _kw; set { _kw = value; currentPage = 1; } }
+    private string Status { get => _st; set { _st = value; currentPage = 1; } }
+    private string Subject { get => _sub; set { _sub = value; currentPage = 1; } }
+    private DateTime? FromDate { get => _from; set { _from = value; currentPage = 1; } }
+    private DateTime? ToDate { get => _to; set { _to = value; currentPage = 1; } }
+    private void ResetFilters() { _kw = _st = _sub = ""; _from = _to = null; currentPage = 1; }
+    private List<string> SubjectOptions => Items.Where(x => x.PhanLoaiNghi == LeaveCategories.TranhThu).Select(x => x.HienThiMonHoc).Distinct().OrderBy(x => x).ToList();
+    private List<LeaveRequest> View => !ShowFilters ? Items : Items.Where(x =>
+        (string.IsNullOrWhiteSpace(_kw) || x.HoTen.Contains(_kw.Trim(), StringComparison.OrdinalIgnoreCase) || x.MaHocVien.Contains(_kw.Trim(), StringComparison.OrdinalIgnoreCase)
+            || x.DiaChiNoiNghi.Contains(_kw.Trim(), StringComparison.OrdinalIgnoreCase) || x.LyDo.Contains(_kw.Trim(), StringComparison.OrdinalIgnoreCase))
+        && (_st == "" || x.TrangThai == _st)
+        && (_sub == "" || x.HienThiMonHoc == _sub)
+        && (_from is null || x.DenThoiDiem.Date >= _from.Value.Date)
+        && (_to is null || x.TuThoiDiem.Date <= _to.Value.Date)).ToList();
+    private bool ShowCategoryCol => Items.Select(x => x.TagLoaiNghi).Distinct().Count() > 1;
+    private bool ShowSubjectCol => !ShowCategoryCol && Items.Any(x => x.PhanLoaiNghi == LeaveCategories.TranhThu);
+    private bool ShowClassCol => ShowClass;
+    private static string DateText(LeaveRequest r)
+    {
+        var a = r.TuThoiDiem; var b = r.DenThoiDiem;
+        if (a.Date == b.Date) return a.ToString("dd/MM/yyyy");
+        return a.Year == b.Year ? $"{a:dd/MM} → {b:dd/MM/yyyy}" : $"{a:dd/MM/yyyy} → {b:dd/MM/yyyy}";
+    }
+    private static string CatClass(LeaveRequest r) => r.PhanLoaiNghi switch { LeaveCategories.CuoiTuan => "cat-weekend", LeaveCategories.LeTet => "cat-holiday", _ => "cat-tranhthu" };
+    private const int PageSize = 10;
+    private int currentPage = 1;
+    private string error = "", message = "", reason = "", action = "";
+    private LeaveRequest? target;
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(View.Count / (double)PageSize));
+    private IEnumerable<LeaveRequest> PageItems => View.Skip((currentPage - 1) * PageSize).Take(PageSize);
+    protected override void OnParametersSet() => currentPage = Math.Clamp(currentPage, 1, TotalPages);
+
+    private static string StatusClass(string s) => s switch
+    {
+        LeaveStatuses.Approved => "status-ok",
+        LeaveStatuses.WaitingPhong or LeaveStatuses.WaitingTrungDoi => "status-wait",
+        LeaveStatuses.Rejected => "status-bad",
+        _ => "status-cancel"
+    };
+    private void AskReject(LeaveRequest item) => Ask("reject", item);
+    private void AskCancel(LeaveRequest item) => Ask("cancel", item);
+    private void Ask(string kind, LeaveRequest item) { action = kind; target = item; reason = ""; }
+    private Task Approve(LeaveRequest item) => Run(() => Repository.Review(Session, item.Id, true, "", ReviewClass), "Đã duyệt đơn.");
+    private Task Confirm()
+    {
+        var item = target!; var text = reason; var kind = action; target = null;
+        return kind == "reject"
+            ? Run(() => Repository.Review(Session, item.Id, false, text, ReviewClass), "Đã từ chối đơn.")
+            : Run(() => Repository.Cancel(Session, item.Id, text), "Đã hủy đơn.");
+    }
+    private async Task Run(Action work, string ok)
+    {
+        error = message = "";
+        try { work(); message = ok; await OnChanged.InvokeAsync(); }
+        catch (Exception ex) { error = ValidationRules.ErrorMessage(ex); }
+    }
+}

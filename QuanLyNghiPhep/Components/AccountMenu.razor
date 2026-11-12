@@ -1,0 +1,14 @@
+@inject AppSession Session
+@inject IJSRuntime JS
+
+<div class="account-menu">
+    <div class="menu-caption">TÀI KHOẢN</div>
+    <a class="nav-link" href="/password"><Icon Name="key" /> Đổi mật khẩu</a>
+    <button type="button" class="nav-link" @onclick="Session.RequestAccount"><Icon Name="user" /> Thông tin tài khoản</button>
+    <button type="button" class="nav-link" @onclick="Session.RequestSecurity"><Icon Name="shield" /> Bảo mật</button>
+    <button type="button" class="nav-link logout" @onclick="Logout"><Icon Name="logout" /> Đăng xuất</button>
+</div>
+
+@code {
+    private async Task Logout() => await JS.InvokeVoidAsync("leaveApp.submitLogout");
+}

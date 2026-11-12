@@ -1,0 +1,162 @@
+@inject AppSession Session
+@inject LeaveRepository Repository
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<div class="shell @(menuCollapsed ? "menu-collapsed" : "")">
+    <aside class="sidebar">
+        <div class="sidebar-meta"><span class="live-dot"></span> Kho lưu trữ Phòng QLHV</div>
+        <nav class="menu">
+            <div class="menu-caption">PHÒNG QUẢN LÝ HỌC VIÊN</div>
+            <button class="nav-link @(phongTab == "records" ? "active" : "")" @onclick='() => SwitchTab("records")'>
+                <Icon Name="archive" />Lưu trữ &amp; Tra cứu nghỉ phép
+            </button>
+            <button class="nav-link @(phongTab == "pending" ? "active" : "")" @onclick='() => SwitchTab("pending")'>
+                <Icon Name="clock" />Đơn chờ duyệt
+            </button>
+            <button class="nav-link @(phongTab == "stats" ? "active" : "")" @onclick='() => SwitchTab("stats")'>
+                <Icon Name="chart" />Thống kê
+            </button>
+            <button class="nav-link @(phongTab is "classes" or "add-class" or "import-class" ? "active" : "")" @onclick='() => SwitchTab("classes")'>
+                <Icon Name="users" />Danh sách các lớp &amp; Học viên
+            </button>
+            <button class="nav-link @(phongTab == "catalog" ? "active" : "")" @onclick='() => SwitchTab("catalog")'>
+                <Icon Name="list" />Lịch nghỉ lễ / Tết
+            </button>
+            <button class="nav-link @(phongTab == "audit" ? "active" : "")" @onclick='() => SwitchTab("audit")'>
+                <Icon Name="history" />Nhật ký hệ thống
+            </button>
+        </nav>
+        <AccountMenu />
+            <div class="sidebar-bottom">
+            <div class="sidebar-person">P</div>
+            <div>
+                <strong>@Session.UserName</strong>
+                <small>@Session.RoleDisplay</small>
+            </div>
+        </div>
+    </aside>
+
+    <div class="workspace">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button type="button" class="toolbar-button" title="Ẩn / hiện menu" @onclick="() => menuCollapsed = !menuCollapsed">☰</button>
+                <div class="topbar-path">
+                    Phòng Quản lý học viên <b>/</b> <span>@(phongTab == "records" ? "Lưu trữ & tra cứu nghỉ phép" : phongTab == "pending" ? "Đơn chờ Phòng QLHV duyệt" : phongTab == "stats" ? "Thống kê" : phongTab == "audit" ? "Nhật ký hệ thống" : phongTab == "catalog" ? "Danh mục" : phongTab == "add-class" ? "Thiết lập danh sách lớp mới" : "Quản lý danh sách các lớp & Học viên")</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <span class="date-chip"> @DateTime.Today.ToString("dd/MM/yyyy")</span>
+            </div>
+        </header>
+
+        <main class="content">
+            @if (!string.IsNullOrWhiteSpace(Notice))
+            {
+                <div class="alert success" role="status">@Notice <button @onclick="() => OnNotice.InvokeAsync(string.Empty)">×</button></div>
+            }
+            @if (!string.IsNullOrWhiteSpace(PageError))
+            {
+                <div class="alert error" role="alert">@PageError <button @onclick="() => OnError.InvokeAsync(string.Empty)">×</button></div>
+            }
+
+            @if (phongTab == "records")
+            {
+                <QuanLyDonNghiPhep AllRecords="@AllRecords"
+                                   Classes="@Classes" OnExport="ExportFiltered" OnChanged="@OnDataChanged" />
+            }
+            else if (phongTab == "pending")
+            {
+                <DuyetDonTheoLop ClassGroups="@ClassGroups" AllRecords="@AllRecords" OnChanged="@OnDataChanged" />
+            }
+            else if (phongTab == "stats")
+            {
+                <ThongKe Records="@AllRecords" />
+            }
+            else if (phongTab == "catalog")
+            {
+                <DanhMuc />
+            }
+            else if (phongTab == "audit")
+            {
+                <NhatKy />
+            }
+            else
+            {
+                <QuanLyDanhSachLop ClassGroups="@ClassGroups"
+                                   AllStudents="@AllStudents"
+                                   AllRecords="@AllRecords"
+                                   OnOpenCreateClass='() => SwitchTab("add-class")'
+                                   OnOpenImportClass='() => SwitchTab("import-class")'
+                                   OnDataChanged="@OnDataChanged"
+                                   OnNotice="@OnNotice"
+                                   OnError="@OnError" />
+                @if (phongTab is "add-class" or "import-class")
+                {
+                    <div class="overlay"><div class="modal-box xl" @onclick:stopPropagation="true">
+                        <TaoDanhSachLopMoi @key="phongTab" Mode="@ImportMode" OnBack='() => SwitchTab("classes")'
+                                   OnClassCreated="HandleClassCreated"
+                                   OnNotice="@OnNotice"
+                                   OnError="@OnError" />
+                    </div></div>
+                }
+            }
+        </main>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<ClassGroup> ClassGroups { get; set; } = new();
+    [Parameter, EditorRequired] public List<Student> AllStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> AllRecords { get; set; } = new();
+    [Parameter] public string Notice { get; set; } = "";
+    [Parameter] public string PageError { get; set; } = "";
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback OnExportExcel { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private bool menuCollapsed = false;
+    private string phongTab = "records";
+    private string ImportMode => phongTab == "import-class" ? "excel" : "manual";
+    private static readonly string[] Tabs = { "records", "pending", "stats", "classes", "catalog", "audit", "add-class", "import-class" };
+    protected override void OnInitialized()
+    {
+        if (TabFromUri(Navigation) is { } t && Tabs.Contains(t)) phongTab = t;
+        Navigation.LocationChanged += OnLocation;
+    }
+    private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var t = TabFromUri(Navigation) ?? "records";
+        if (Tabs.Contains(t) && t != phongTab) { phongTab = t; _ = InvokeAsync(StateHasChanged); }
+    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocation;
+    private static string? TabFromUri(NavigationManager nav)
+    {
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query);
+        return q.TryGetValue("tab", out var v) ? v.ToString() : null;
+    }
+
+
+    private List<LeaveRequest> Pending => AllRecords.Where(x => x.TrangThai == LeaveStatuses.WaitingPhong).OrderBy(x => x.NgayTao).ToList();
+    private List<string> Classes => ClassGroups.Select(x => x.TenLop).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private async Task SwitchTab(string tab)
+    {
+        phongTab = tab;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", tab));
+        await OnError.InvokeAsync("");
+    }
+
+    private async Task HandleClassCreated()
+    {
+        await OnDataChanged.InvokeAsync();
+        phongTab = "classes";
+    }
+    private async Task ExportFiltered(List<LeaveRequest> rows)
+    {
+        try {var bytes=Repository.ExportExcel(Session,rows);await JS.InvokeVoidAsync("leaveApp.downloadBase64","DanhSachNghiPhep_DaLoc.xlsx",Convert.ToBase64String(bytes),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");await OnNotice.InvokeAsync($"Đã xuất {rows.Count} bản ghi theo bộ lọc.");}
+        catch(Exception ex) {await OnError.InvokeAsync(ex is UserAccessException or ArgumentException?ex.Message:"Không thể xuất dữ liệu.");}
+    }
+}

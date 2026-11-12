@@ -1,0 +1,30 @@
+@using System.Globalization
+@{ var total = Items.Sum(x => x.Value); double acc = 0; }
+<div class="donut-wrap">
+    <svg viewBox="0 0 42 42" class="donut" role="img" aria-label="@CenterLabel">
+        <circle cx="21" cy="21" r="15.9155" fill="none" stroke="#eef1f6" stroke-width="5" />
+        @if (total > 0)
+        {
+            @foreach (var s in Items.Where(x => x.Value > 0))
+            {
+                var pct = 100.0 * s.Value / total;
+                <circle cx="21" cy="21" r="15.9155" fill="none" stroke="@s.Color" stroke-width="5"
+                        stroke-dasharray="@F(pct) @F(100 - pct)" stroke-dashoffset="@F(25 - acc)" />
+                acc += pct;
+            }
+        }
+        <text x="21" y="21.2" text-anchor="middle" class="donut-num">@total</text>
+        <text x="21" y="25.8" text-anchor="middle" class="donut-lbl">@CenterLabel</text>
+    </svg>
+    <ul class="legend">
+        @foreach (var s in Items)
+        {
+            <li><i style="background:@s.Color"></i><span>@s.Label</span><b>@s.Value</b><em>@(total == 0 ? 0 : (int)Math.Round(100.0 * s.Value / total))%</em></li>
+        }
+    </ul>
+</div>
+@code {
+    [Parameter, EditorRequired] public List<Slice> Items { get; set; } = new();
+    [Parameter] public string CenterLabel { get; set; } = "";
+    private static string F(double v) => v.ToString("0.##", CultureInfo.InvariantCulture);
+}

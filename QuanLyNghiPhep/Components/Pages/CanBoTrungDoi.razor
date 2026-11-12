@@ -1,0 +1,225 @@
+@inject AppSession Session
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@if (TrungDoiView == "select-class")
+{
+    <div class="class-select-stage">
+        @if (!string.IsNullOrWhiteSpace(Notice))
+        {
+            <div class="alert success stage-alert" role="status">@Notice <button @onclick="() => OnNotice.InvokeAsync(string.Empty)">×</button></div>
+        }
+        <div class="class-picker-box">
+            <div class="class-picker-header">
+                <img src="/image/logo_hoc_vien.png" alt="Logo Học viện" />
+                <div>
+                    <span class="eyebrow">PHÂN QUYỀN CHỦ NHIỆM LỚP</span>
+                    <h2>Chọn lớp quản lý</h2>
+                </div>
+            </div>
+
+            <div class="class-picker-list">
+                @if (ClassGroups.Count == 0)
+                {
+                    <div class="class-picker-note" style="margin-top:0;">
+                        Chưa có lớp nào được phân công cho tài khoản <b>@Session.UserName</b>. Vui lòng liên hệ <b>Phòng Quản lý học viên</b> để thiết lập lớp quản lý.
+                    </div>
+                }
+                else
+                {
+                    @foreach (var cls in ClassGroups)
+                    {
+                        int countHv = AllStudents.Count(x => x.Lop.Equals(cls.TenLop, StringComparison.OrdinalIgnoreCase));
+                        int countDon = AllRecords.Count(x => x.Lop.Equals(cls.TenLop, StringComparison.OrdinalIgnoreCase));
+                        <button type="button" class="class-picker-row" @onclick="() => OnEnterClass.InvokeAsync(cls.TenLop)">
+                            <div class="class-row-main">
+                                <strong>Lớp @cls.TenLop</strong>
+                                <span>@countHv học viên · @countDon lượt nghỉ đã lưu trữ</span>
+                            </div>
+                            <div class="class-row-arrow">Mở quản lý lớp →</div>
+                        </button>
+                    }
+                }
+            </div>
+
+            <div class="picker-account">
+                <a href="/password">Đổi mật khẩu</a>
+                <button type="button" @onclick="Session.RequestAccount">Thông tin tài khoản</button>
+                <button type="button" @onclick="Session.RequestSecurity">Bảo mật</button>
+                <button type="button" @onclick='() => JS.InvokeVoidAsync("leaveApp.submitLogout")'>Đăng xuất</button>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="shell @(menuCollapsed ? "menu-collapsed" : "")">
+        <aside class="sidebar">
+            <nav class="menu">
+                <div class="menu-caption">DANH MỤC QUẢN LÝ LỚP @SelectedClass</div>
+                <button class="nav-link @(trungDoiTab == "overview" ? "active" : "")" @onclick='() => SwitchTrungDoiTab("overview")'>
+                    <Icon Name="chart" />Tổng quan
+                </button>
+                <button class="nav-link @(trungDoiTab == "weekend" ? "active" : "")" @onclick='() => SwitchTrungDoiTab("weekend")'>
+                    <Icon Name="calendar" />Danh sách nghỉ cuối tuần
+                </button>
+                <button class="nav-link @(trungDoiTab == "holiday" ? "active" : "")" @onclick='() => SwitchTrungDoiTab("holiday")'>
+                    <Icon Name="star" />Danh sách nghỉ lễ và Tết
+                </button>
+                <button class="nav-link @(trungDoiTab == "tranhthu" ? "active" : "")" @onclick='() => SwitchTrungDoiTab("tranhthu")'>
+                    <Icon Name="file" />Nghỉ phép tranh thủ
+                </button>
+
+                <div class="menu-caption subcaption">THÔNG TIN TRUNG ĐỌI</div>
+                <button class="nav-link @(trungDoiTab == "students" ? "active" : "")" @onclick='() => SwitchTrungDoiTab("students")'>
+                    <Icon Name="users" />Danh sách học viên lớp @SelectedClass
+                </button>
+                <button type="button"
+                        class="nav-link @(trungDoiTab == "subjects" ? "active" : "")"
+                        @onclick='() => SwitchTrungDoiTab("subjects")'>
+                    <Icon Name="book" />Môn học của lớp
+                </button>
+            </nav>
+
+            <AccountMenu />
+            <div class="sidebar-bottom">
+                <div class="sidebar-person">@(Session.UserName.Length > 0 ? Session.UserName.Substring(0, 1).ToUpperInvariant() : "T")</div>
+                <div>
+                    <strong>@Session.UserName</strong>
+                    <small>@Session.RoleDisplay</small>
+                </div>
+            </div>
+        </aside>
+
+        <div class="workspace">
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button type="button" class="toolbar-button" title="Ẩn / hiện thanh menu" @onclick="() => menuCollapsed = !menuCollapsed">☰</button>
+                    <div class="topbar-path">
+                        Chủ nhiệm lớp <b>/</b> Lớp <span>@SelectedClass</span> <b>/</b> <span>@TrungDoiTabTitle</span>
+                    </div>
+                </div>
+                <div class="header-right">
+                    <span class="date-chip"> Hôm nay: @DateTime.Today.ToString("dd/MM/yyyy")</span>
+                </div>
+            </header>
+
+            <main class="content">
+                @if (!string.IsNullOrWhiteSpace(Notice))
+                {
+                    <div class="alert success" role="status">@Notice <button @onclick="() => OnNotice.InvokeAsync(string.Empty)">×</button></div>
+                }
+                @if (!string.IsNullOrWhiteSpace(PageError))
+                {
+                    <div class="alert error" role="alert">@PageError <button @onclick="() => OnError.InvokeAsync(string.Empty)">×</button></div>
+                }
+
+                @if (trungDoiTab == "overview")
+                {
+                    <TongQuanTrungDoi SelectedClass="@SelectedClass"
+                                      ClassStudents="@ClassStudents"
+                                      ClassRecords="@ClassRecords" />
+                }
+                else if (trungDoiTab == "weekend")
+                {
+                    <DsNghiCuoiTuan SelectedClass="@SelectedClass"
+                                    ClassStudents="@ClassStudents"
+                                    WeekendClassRecords="@WeekendClassRecords"
+                                    OnDataChanged="@OnDataChanged"
+                                    OnNotice="@OnNotice"
+                                    OnError="@OnError" />
+                }
+                else if (trungDoiTab == "holiday")
+                {
+                    <DsNghiLeTet SelectedClass="@SelectedClass"
+                                 ClassStudents="@ClassStudents"
+                                 HolidayClassRecords="@HolidayClassRecords"
+                                 OnDataChanged="@OnDataChanged"
+                                 OnNotice="@OnNotice"
+                                 OnError="@OnError" />
+                }
+                else if (trungDoiTab == "tranhthu")
+                {
+                    <DsNghiTranhThu SelectedClass="@SelectedClass"
+                                    ClassStudents="@ClassStudents"
+                                    TranhThuClassRecords="@TranhThuClassRecords"
+                                    OnDataChanged="@OnDataChanged"
+                                    OnNotice="@OnNotice"
+                                    OnError="@OnError" />
+                }
+                else if (trungDoiTab == "subjects")
+{
+                    <MonHocCuaLop SelectedClass="@SelectedClass" />
+}
+                else if (trungDoiTab == "students")
+                {
+                    <DanhSachHocVienLop SelectedClass="@SelectedClass"
+                                        ClassStudents="@ClassStudents"
+                                        ClassRecords="@ClassRecords" />
+                }
+            </main>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string TrungDoiView { get; set; } = "select-class";
+    [Parameter, EditorRequired] public string SelectedClass { get; set; } = "";
+    [Parameter, EditorRequired] public List<ClassGroup> ClassGroups { get; set; } = new();
+    [Parameter, EditorRequired] public List<Student> AllStudents { get; set; } = new();
+    [Parameter, EditorRequired] public List<LeaveRequest> AllRecords { get; set; } = new();
+    [Parameter] public string Notice { get; set; } = "";
+    [Parameter] public string PageError { get; set; } = "";
+    [Parameter] public EventCallback<string> OnEnterClass { get; set; }
+    [Parameter] public EventCallback OnDataChanged { get; set; }
+    [Parameter] public EventCallback OnExportExcel { get; set; }
+    [Parameter] public EventCallback<string> OnNotice { get; set; }
+    [Parameter] public EventCallback<string> OnError { get; set; }
+
+    private bool menuCollapsed = false;
+    private string trungDoiTab = "overview";
+    private static readonly string[] Tabs = { "overview", "weekend", "holiday", "tranhthu", "students", "subjects" };
+    protected override void OnInitialized()
+    {
+        if (TabFromUri(Navigation) is { } t && Tabs.Contains(t)) trungDoiTab = t;
+        Navigation.LocationChanged += OnLocation;
+    }
+    private void OnLocation(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        var t = TabFromUri(Navigation) ?? "overview";
+        if (Tabs.Contains(t) && t != trungDoiTab) { trungDoiTab = t; _ = InvokeAsync(StateHasChanged); }
+    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocation;
+    private static string? TabFromUri(NavigationManager nav)
+    {
+        var q = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(nav.Uri).Query);
+        return q.TryGetValue("tab", out var v) ? v.ToString() : null;
+    }
+
+
+    private List<Student> ClassStudents => AllStudents.Where(x => x.Lop.Equals(SelectedClass, StringComparison.OrdinalIgnoreCase)).OrderBy(x => x.STT).ToList();
+    private List<LeaveRequest> ClassRecords => AllRecords.Where(x => x.Lop.Equals(SelectedClass, StringComparison.OrdinalIgnoreCase)).ToList();
+    private List<LeaveRequest> WeekendClassRecords => ClassRecords.Where(x => x.PhanLoaiNghi == LeaveCategories.CuoiTuan).ToList();
+    private List<LeaveRequest> HolidayClassRecords => ClassRecords.Where(x => x.PhanLoaiNghi == LeaveCategories.LeTet).ToList();
+    private List<LeaveRequest> TranhThuClassRecords => ClassRecords.Where(x => x.PhanLoaiNghi == LeaveCategories.TranhThu).ToList();
+
+    private string TrungDoiTabTitle => trungDoiTab switch
+    {
+        "overview" => "Tổng quan & Thống kê",
+        "weekend" => "Danh sách nghỉ cuối tuần",
+        "holiday" => "Danh sách nghỉ lễ và Tết",
+        "tranhthu" => "Nghỉ phép tranh thủ",
+        "subjects" => "Môn học của lớp",
+        "students" => "THÔNG TIN TRUNG ĐỌI",
+        _ => "Tổng quan"
+    };
+
+    private async Task SwitchTrungDoiTab(string tab)
+    {
+        trungDoiTab = tab;
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("tab", tab));
+        await OnNotice.InvokeAsync("");
+        await OnError.InvokeAsync("");
+    }
+}

@@ -1,0 +1,47 @@
+@inject AppSession Session
+<section class="panel list-panel">
+    @if (string.IsNullOrEmpty(selectedClass))
+    {
+        <div class="panel-head"><div><h2>Duyệt đơn theo lớp</h2><p>Chọn lớp để xem và xét duyệt các đơn do chủ nhiệm lớp gửi.</p></div></div>
+        <div class="form-body"><div class="field"><label>Tìm lớp</label><input @bind="search" @bind:event="oninput" placeholder="Nhập tên lớp..." /></div></div>
+        <div class="pending-class-grid">
+            @foreach (var group in FilteredClasses)
+            {
+                var count = Pending.Count(x => x.Lop.Equals(group.TenLop, StringComparison.OrdinalIgnoreCase));
+                <article class="pending-class-card" @key="group.TenLop">
+                    <h3>Lớp @group.TenLop</h3>
+                    <p>Chủ nhiệm: @(string.IsNullOrWhiteSpace(group.NguoiTao) ? "Chưa phân công" : group.NguoiTao)</p>
+                    <p><strong>@count</strong> đơn chờ duyệt</p>
+                    <button type="button" class="btn primary" @onclick="() => selectedClass = group.TenLop">Xem đơn của lớp</button>
+                </article>
+            }
+            @if (!FilteredClasses.Any()) { <p>Không có lớp phù hợp.</p> }
+        </div>
+    }
+    else
+    {
+        <div class="panel-head">
+            <div><h2>Đơn chờ duyệt — Lớp @selectedClass</h2><p>@SelectedPending.Count đơn chờ Phòng QLHV xử lý</p></div>
+            <div class="row-actions">
+                <button class="btn outline" @onclick="OnChanged">Tải lại</button>
+                <button class="btn outline" @onclick='() => selectedClass = ""'>← Chọn lớp khác</button>
+            </div>
+        </div>
+        <LeaveDataTable @key="selectedClass" Items="@SelectedPending" ShowClass="true" ShowFilters="true"
+                        AllowReview="true" ReviewClass="@selectedClass" OnChanged="@OnChanged" />
+    }
+</section>
+@code {
+    [Parameter] public List<ClassGroup> ClassGroups { get; set; } = new();
+    [Parameter] public List<LeaveRequest> AllRecords { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+    private string selectedClass = "", search = "";
+    private List<LeaveRequest> Pending => AllRecords.Where(x => x.TrangThai == LeaveStatuses.WaitingPhong).ToList();
+    private List<LeaveRequest> SelectedPending => Pending.Where(x => x.Lop.Equals(selectedClass, StringComparison.OrdinalIgnoreCase)).OrderBy(x => x.NgayTao).ToList();
+    private IEnumerable<ClassGroup> FilteredClasses => ClassGroups.Where(x => x.TenLop.Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+        .OrderByDescending(x => Pending.Count(p => p.Lop.Equals(x.TenLop, StringComparison.OrdinalIgnoreCase))).ThenBy(x => x.TenLop);
+    protected override void OnParametersSet()
+    {
+        if (selectedClass != "" && !ClassGroups.Any(x => x.TenLop == selectedClass)) selectedClass = "";
+    }
+}

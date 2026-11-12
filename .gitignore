@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+**/AppData/*
+.vs/
+*.user
+*.suo
+
+.env
+.env.*
+/data/
+*.pem
+*.key
+*.pfx
+*.p12

@@ -1,0 +1,48 @@
+<div class="dash">
+    <div class="dash-toolbar">
+        <h2>Thống kê nghỉ phép</h2>
+        <div class="field inline"><label>Năm</label><input type="number" min="2000" max="2200" @bind="year" /></div>
+    </div>
+    <div class="dash-kpis">
+        <Kpi Label="Tổng lượt nghỉ" Value="@Valid.Count().ToString()" Sub="@("Năm " + year)" />
+        <Kpi Label="Nghỉ cuối tuần" Value="@CountType(LeaveCategories.CuoiTuan).ToString()" Sub="@((Pct(CountType(LeaveCategories.CuoiTuan))) + "% tổng lượt")" />
+        <Kpi Label="Nghỉ lễ / Tết" Value="@CountType(LeaveCategories.LeTet).ToString()" Sub="@((Pct(CountType(LeaveCategories.LeTet))) + "% tổng lượt")" />
+        <Kpi Label="Nghỉ tranh thủ" Value="@CountType(LeaveCategories.TranhThu).ToString()" Sub="@((Pct(CountType(LeaveCategories.TranhThu))) + "% tổng lượt")" />
+        <Kpi Label="Số lớp có nghỉ" Value="@Valid.Select(x => x.Lop).Distinct().Count().ToString()" Sub="@(Valid.Select(x => x.MaHocVien).Distinct().Count() + " học viên")" />
+        <Kpi Label="Chờ duyệt" Value="@InYear.Count(x => x.TrangThai == LeaveStatuses.WaitingPhong).ToString()" Sub="Cần Phòng QLHV xử lý" />
+    </div>
+    <div class="dash-row two">
+        <div class="dash-card"><h3>Phân bố theo loại phép</h3><Donut Items="@TypeSlices" CenterLabel="lượt nghỉ" /></div>
+        <div class="dash-card"><h3>Lượt nghỉ theo tháng</h3><div class="sub">Năm @year</div><ColumnChart Items="@Months" /></div>
+    </div>
+    <div class="dash-row three">
+        <div class="dash-card"><h3>Lớp nghỉ nhiều nhất</h3><RankList Items="@ClassRank" /></div>
+        <div class="dash-card"><h3>Học viên nghỉ nhiều nhất</h3><RankList Items="@TopStudents" Color="@ChartColors.Tranh" /></div>
+        <div class="dash-card"><h3>Trạng thái đơn</h3><StackBar Items="@StatusSlices" /></div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public List<LeaveRequest> Records { get; set; } = new();
+    private int year = DateTime.Today.Year;
+    private IEnumerable<LeaveRequest> InYear => Records.Where(x => x.TuThoiDiem.Year == year);
+    private IEnumerable<LeaveRequest> Valid => InYear.Where(x => x.TrangThai == LeaveStatuses.Approved || x.TrangThai == LeaveStatuses.WaitingPhong);
+    private int CountType(string t) => Valid.Count(x => x.PhanLoaiNghi == t);
+    private int Pct(int v) { var t = Valid.Count(); return t == 0 ? 0 : (int)Math.Round(100.0 * v / t); }
+    private List<Slice> TypeSlices => new()
+    {
+        new("Nghỉ cuối tuần", CountType(LeaveCategories.CuoiTuan), ChartColors.Weekend),
+        new("Nghỉ lễ / Tết", CountType(LeaveCategories.LeTet), ChartColors.Holiday),
+        new("Nghỉ tranh thủ", CountType(LeaveCategories.TranhThu), ChartColors.Tranh),
+    };
+    private List<ChartPoint> Months => Enumerable.Range(1, 12).Select(m => new ChartPoint("T" + m, Valid.Count(x => x.TuThoiDiem.Month == m))).ToList();
+    private List<RankItem> ClassRank => Valid.GroupBy(x => x.Lop).Select(g => new RankItem(g.Key, g.Count())).OrderByDescending(x => x.Value).Take(8).ToList();
+    private List<RankItem> TopStudents => Valid.GroupBy(x => x.MaHocVien).Select(g => new RankItem(g.First().HoTen, g.Count(), g.Key)).OrderByDescending(x => x.Value).Take(8).ToList();
+    private List<Slice> StatusSlices => new()
+    {
+        new(LeaveStatuses.Approved, InYear.Count(x => x.TrangThai == LeaveStatuses.Approved), ChartColors.Ok),
+        new(LeaveStatuses.WaitingPhong, InYear.Count(x => x.TrangThai == LeaveStatuses.WaitingPhong), ChartColors.Wait),
+        new(LeaveStatuses.Rejected, InYear.Count(x => x.TrangThai == LeaveStatuses.Rejected), ChartColors.Bad),
+        new(LeaveStatuses.Cancelled, InYear.Count(x => x.TrangThai == LeaveStatuses.Cancelled), ChartColors.Cancel),
+    };
+}

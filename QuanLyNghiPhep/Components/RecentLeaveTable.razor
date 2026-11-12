@@ -1,0 +1,7 @@
+<LeaveDataTable Items="@Items" OnChanged="@OnChanged" ShowClass="false" ShowFilters="@ShowFilters" Toolbar="@Toolbar" />
+@code {
+    [Parameter, EditorRequired] public List<LeaveRequest> Items { get; set; } = new();
+    [Parameter] public EventCallback OnChanged { get; set; }
+    [Parameter] public bool ShowFilters { get; set; } = true;
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+}
